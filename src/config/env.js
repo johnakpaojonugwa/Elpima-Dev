@@ -18,7 +18,25 @@ const envSchema = z.object({
   // revisiting when that step lands.
   SUPABASE_JWT_SECRET: z.string().min(1).optional(),
 
-  CORS_ORIGIN: z.string().default("*"),
+  // Accepts a single origin, "*" (any origin, dev default), or a
+  // comma-separated list. The browser's CORS check fails silently on
+  // a single malformed origin, so parsing the list at the env boundary
+  // catches a typo (e.g. a missing slash) before it ever reaches cors().
+  CORS_ORIGIN: z
+    .string()
+    .default("*")
+    .transform((raw) => {
+      const items = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      // Keep "*" as the wildcard so cors() handles credentials correctly
+      // (it rejects origin:"*" + credentials:true).
+      if (items.length === 0 || (items.length === 1 && items[0] === "*")) {
+        return "*";
+      }
+      return items;
+    }),
 });
 
 const parsed = envSchema.safeParse(process.env);
