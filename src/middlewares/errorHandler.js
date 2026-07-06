@@ -3,12 +3,6 @@ import { ZodError } from "zod";
 import { logger } from "../utils/logger.js";
 import { isProd } from "../config/env.js";
 
-// A request-scoped UUID so a single failure can be traced end-to-end:
-// surfaced to the client (so support can correlate), included in the
-// log line (so engineers can find it in the aggregator). Without this,
-// an "Internal server error" returned to the user is a dead end.
-import { randomUUID } from "node:crypto";
-
 /**
  * Map an unknown thrown value to a safe response shape.
  *
@@ -130,7 +124,13 @@ export function notFoundHandler(req, res) {
 // Express 5 auto-forwards rejected promises from async route handlers
 // to this, so route handlers don't each need their own try/catch.
 export function errorHandler(err, req, res, _next) {
-  const correlationId = randomUUID();
+  // The correlationId middleware mints req.correlationId on every
+  // request before anything else runs, so the error log line and
+  // the access log line for the same request share the same ID.
+  // The fallback handles a misuse (errorHandler mounted before
+  // correlationId) without crashing.
+  const correlationId = req.correlationId ?? "no-correlation-id";
+
   const classified = classifyError(err);
 
   // Internal log: full detail, including stack, so engineers can

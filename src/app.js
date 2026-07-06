@@ -9,6 +9,28 @@ import { env, isProd } from './config/env.js';
 import { router } from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 import { morganStream } from './utils/logger.js';
+import { correlationId } from './middlewares/correlationId.js';
+
+// Custom morgan format: returns a JSON-encoded line so the stream
+// (morganStream.write in utils/logger.js) can pull structured fields
+// off it and forward them to winston. The fields are the only
+// things logged — request body, query, and headers are deliberately
+// omitted to avoid leaking PHI/PII.
+function jsonAccessLog(tokens, req, res) {
+  const userId = req.user?.supabaseUserId;
+  const organizationId = req.user?.organizationId;
+  return JSON.stringify({
+    msg: "http_request",
+    correlationId: req.correlationId,
+    method: tokens.method(req, res),
+    url: tokens.url(req, res),
+    status: Number(tokens.status(req, res)),
+    durationMs: Number(tokens["response-time"](req, res)),
+    userId,
+    organizationId,
+    ip: tokens["remote-addr"](req, res),
+  });
+}
 
 // Exported as a factory (not a started server) so tests can import
 // and hit it directly with supertest, no open port required.
@@ -24,7 +46,17 @@ export function createApp() {
   app.use(hpp());
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(morgan(isProd ? 'combined' : 'dev', { stream: morganStream }));
+
+  // Mounted before morgan so the access log line carries the
+  // correlation ID. Mounted before everything that can short-circuit
+  // a response (rate limit, route handlers, errorHandler) so even a
+  // 401/404/500 response has an X-Request-Id header.
+  app.use(correlationId);
+
+  // JSON access log. The format function reads req.correlationId and
+  // req.user; both are set before morgan runs (correlation ID by the
+  // middleware above, req.user by requireAuth inside a route).
+  app.use(morgan(jsonAccessLog, { stream: morganStream }));
 
   // Global rate limit as a baseline. Tighter, route-specific limits
   // (e.g. on auth endpoints) can layer on top later.

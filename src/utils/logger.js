@@ -20,8 +20,23 @@ export const logger = winston.createLogger({
   transports: [new winston.transports.Console()],
 });
 
-// morgan writes access logs through this so everything ends up
-// on the same transport(s) instead of two separate log streams.
+// Access log stream for morgan. The custom morgan format in app.js
+// emits a JSON-encoded line containing both a short human summary
+// (`msg`) and the structured fields (correlationId, method, url,
+// status, durationMs, userId, organizationId, ip). This stream
+// parses that line and forwards the fields to winston.
+//
+// The parse is wrapped in try/catch so a future contributor who
+// adds a stray `{` to the format string fails gracefully — the
+// access log falls back to a plain `info` line instead of crashing
+// the process.
 export const morganStream = {
-  write: (message) => logger.info(message.trim()),
+  write(line) {
+    try {
+      const record = JSON.parse(line);
+      logger.info(record.msg ?? "http_request", record);
+    } catch {
+      logger.info(line.trim());
+    }
+  },
 };
