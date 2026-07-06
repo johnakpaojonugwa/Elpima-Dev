@@ -78,6 +78,11 @@ export function requireAuth(req, res, next) {
     organizationId: payload.organization_id,
     role: payload.role,
     email: payload.email,
+    // Optional. The Supabase custom access token hook stamps this once
+    // it's extended (the organization_id claim is the only one it
+    // currently emits). Undefined for tokens issued before that hook
+    // change — requireOrgType falls back to a DB lookup in that case.
+    organizationType: payload.organization_type,
   };
 
   next();
@@ -110,11 +115,19 @@ export function requireRole(...allowed) {
  * Gate a route by organization type. Must be mounted AFTER
  * `requireAuth`.
  *
- * The JWT currently carries `organization_id` but not
- * `organization_type` — the custom access token hook only stamps the
- * org id. We do a single PK lookup of the org's type here. When the
- * hook is later extended to stamp the type, this middleware can
- * prefer the claim and skip the round-trip.
+ * The custom access token hook can stamp `organization_type` into
+ * every issued JWT (it already stamps `organization_id`); when the
+ * claim is present, `req.user.organizationType` is set by
+ * `requireAuth` and we use it directly, skipping the DB round-trip.
+ * When the claim is absent (tokens issued before the hook was
+ * extended), we fall back to a single PK lookup of the org's type.
+ *
+ * Why trust the claim when present: the custom access token hook is
+ * the same source of truth that RLS already reads via
+ * `auth.jwt() ->> 'organization_id'`, so a verified
+ * `organization_type` claim is at least as trustworthy as the DB row.
+ * It also keeps the lookup off the hot path for every request once
+ * the hook is updated.
  *
  * Usage: `router.post("/quotes", requireAuth, requireOrgType("HOSPITAL"), handler)`
  *
@@ -129,16 +142,24 @@ export function requireOrgType(...allowed) {
       return next(new AppError(401, "Authentication required"));
     }
 
+    // Fast path: claim present. Skip the DB lookup entirely.
+    if (req.user.organizationType) {
+      if (!allowed.includes(req.user.organizationType)) {
+        return next(new AppError(403, "Insufficient organization type"));
+      }
+      return next();
+    }
+
+    // Slow path: claim absent. Look the org up by id. The "org
+    // deleted" 401 branch only makes sense here — with a claim, a
+    // stale token's claim is still a valid authorization decision
+    // until the token expires.
     try {
       const org = await prisma.organization.findUnique({
         where: { id: req.user.organizationId },
         select: { type: true },
       });
 
-      // An authenticated token whose org has been deleted (or never
-      // existed) is a misconfiguration, not a 403. Treating it as 403
-      // would be misleading; 401 forces the caller to re-auth and
-      // pick up a fresh token once the org is restored.
       if (!org) {
         return next(
           new AppError(401, "Authentication required"),

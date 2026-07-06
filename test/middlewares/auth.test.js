@@ -315,3 +315,147 @@ describe("requireOrgType", () => {
     expect(err.message).toBe("Authentication required");
   });
 });
+
+// =============================================================================
+// requireOrgType — JWT claim short-circuit
+// =============================================================================
+//
+// When the Supabase custom access token hook stamps organization_type
+// into the JWT, requireAuth populates req.user.organizationType and
+// requireOrgType must use it directly. The DB lookup must be skipped
+// entirely — these tests assert that prisma.organization.findUnique is
+// never called when the claim is present.
+
+describe("requireOrgType — JWT claim short-circuits the DB lookup", () => {
+  let findUnique;
+
+  beforeEach(() => {
+    vi.resetModules();
+    findUnique = vi.fn();
+    vi.doMock("../../src/config/prisma.js", () => ({
+      prisma: { organization: { findUnique } },
+    }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("calls next() with no error and never touches Prisma when the claim matches", async () => {
+    const { requireOrgType: requireOrgTypeMocked } = await import(
+      "../../src/middlewares/auth.js"
+    );
+
+    const req = {
+      user: { organizationId: "org-uuid", organizationType: "HOSPITAL" },
+    };
+    const res = {};
+    const next = vi.fn();
+
+    await requireOrgTypeMocked("HOSPITAL")(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 and never touches Prisma when the claim is in the wrong allow-list", async () => {
+    const { requireOrgType: requireOrgTypeMocked } = await import(
+      "../../src/middlewares/auth.js"
+    );
+
+    const req = {
+      user: { organizationId: "org-uuid", organizationType: "VENDOR" },
+    };
+    const res = {};
+    const next = vi.fn();
+
+    await requireOrgTypeMocked("HOSPITAL")(req, res, next);
+
+    const err = next.mock.calls[0][0];
+    expect(err.status).toBe(403);
+    expect(err.message).toBe("Insufficient organization type");
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the DB lookup when req.user.organizationType is absent", async () => {
+    // Simulate the DB returning a matching type. The claim path is
+    // skipped, so the existing PK lookup is exercised end-to-end.
+    findUnique.mockResolvedValue({ type: "HOSPITAL" });
+
+    const { requireOrgType: requireOrgTypeMocked } = await import(
+      "../../src/middlewares/auth.js"
+    );
+
+    const req = { user: { organizationId: "org-uuid" } };
+    const res = {};
+    const next = vi.fn();
+
+    await requireOrgTypeMocked("HOSPITAL")(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: "org-uuid" },
+      select: { type: true },
+    });
+  });
+});
+
+// =============================================================================
+// requireAuth — populates organizationType from payload.organization_type
+// =============================================================================
+//
+// The hook stamps organization_type for new tokens; requireAuth must
+// surface it on req.user.organizationType so requireOrgType can
+// short-circuit. Tokens issued before the hook change don't have the
+// claim and must continue to authenticate (the field is just
+// undefined on req.user).
+
+describe("requireAuth — organizationType claim propagation", () => {
+  const secret = env.SUPABASE_JWT_SECRET;
+
+  it("populates req.user.organizationType when the token carries the claim", () => {
+    const token = jwt.sign(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        organization_type: "HOSPITAL",
+        role: "ORG_ADMIN",
+        email: "admin@example.com",
+      },
+      secret,
+      { algorithm: "HS256", expiresIn: "1h" },
+    );
+    const req = { headers: { authorization: `Bearer ${token}` } };
+    const res = {};
+    const next = vi.fn();
+
+    requireAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.user.organizationType).toBe("HOSPITAL");
+  });
+
+  it("leaves req.user.organizationType undefined when the claim is absent", () => {
+    // Tokens issued before the hook was extended do not carry
+    // organization_type. requireAuth must still authenticate; the
+    // field is just undefined on req.user.
+    const token = jwt.sign(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        role: "ORG_STAFF",
+        email: "staff@example.com",
+      },
+      secret,
+      { algorithm: "HS256", expiresIn: "1h" },
+    );
+    const req = { headers: { authorization: `Bearer ${token}` } };
+    const res = {};
+    const next = vi.fn();
+
+    requireAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.user.organizationType).toBeUndefined();
+  });
+});
