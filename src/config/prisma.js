@@ -1,11 +1,9 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-// Generated client path matches your schema.prisma:
+// Generated client path matches the schema's
 //   generator client { output = "../generated/prisma" }
-// which resolves to <project root>/generated/prisma.
-// NOTE: verify this exact filename after `prisma generate` — the new
-// "prisma-client" generator emits a barrel file, but the exact name
-// (client.js vs index.js) can vary by minor version. Adjust the
-// import below to match what actually gets generated on your machine.
+// resolving to <project root>/generated/prisma/client.js (the
+// "prisma-client" generator's barrel). Update the import only if the
+// generator's output filename ever changes.
 import { PrismaClient } from "../../generated/prisma/client.js";
 import { env } from "./env.js";
 import { logger } from "../utils/logger.js";
