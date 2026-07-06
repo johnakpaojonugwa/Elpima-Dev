@@ -13,10 +13,11 @@ const envSchema = z.object({
 
   SUPABASE_URL: z.string().url(),
   SUPABASE_SECRET_KEY: z.string().min(1),
-  // Used later by the auth middleware to verify incoming user JWTs.
-  // Not required yet, but declared now so the schema doesn't need
-  // revisiting when that step lands.
-  SUPABASE_JWT_SECRET: z.string().min(1).optional(),
+  // Used by the auth middleware to verify incoming user JWTs. The
+  // Supabase custom access token hook signs GoTrue access tokens with
+  // this secret; the same secret verifies them on the API side. Required
+  // — booting with it missing means every request would 401.
+  SUPABASE_JWT_SECRET: z.string().min(1),
 
   // Accepts a single origin, "*" (any origin, dev default), or a
   // comma-separated list. The browser's CORS check fails silently on
