@@ -48,3 +48,5 @@ temp/
 
 # prisma
 .prisma
+# Prisma generated client (produced by `postinstall` → `prisma generate`)
+generated/
