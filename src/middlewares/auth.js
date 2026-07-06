@@ -21,14 +21,23 @@ import { AppError } from "../utils/AppError.js";
  * `users` table, so a verified token is by itself enough to
  * authorize a request — no DB lookup required for the common path.
  *
+ * `SUPABASE_JWT_AUDIENCE` (optional) is enforced as the expected
+ * `aud` claim when set. Fail-closed: a token without an `aud`
+ * claim is rejected when the env is set.
+ *
  * @param {string} token  The raw JWT (no "Bearer " prefix).
  * @param {string} secret The shared secret used to sign it.
  * @returns {object}      The decoded payload.
- * @throws  {JsonWebTokenError}  Bad signature, malformed token, wrong alg.
+ * @throws  {JsonWebTokenError}  Bad signature, malformed token, wrong alg, wrong aud.
  * @throws  {TokenExpiredError} Token past its `exp` claim.
  */
 export function verifySupabaseJwt(token, secret) {
-  return jwt.verify(token, secret, { algorithms: ["HS256"] });
+  return jwt.verify(token, secret, {
+    algorithms: ["HS256"],
+    ...(env.SUPABASE_JWT_AUDIENCE
+      ? { audience: env.SUPABASE_JWT_AUDIENCE }
+      : {}),
+  });
 }
 
 /**

@@ -27,6 +27,14 @@ const envSchema = z.object({
   // — booting with it missing means every request would 401.
   SUPABASE_JWT_SECRET: z.string().min(1),
 
+  // Optional. The expected `aud` claim on incoming access tokens. When
+  // set, jsonwebtoken rejects tokens whose `aud` doesn't match. When
+  // unset, no audience check is performed (current default).
+  //
+  // Supabase's access tokens don't set a custom `aud` by default, so
+  // leave this unset until the hook is configured to emit one.
+  SUPABASE_JWT_AUDIENCE: z.string().min(1).optional(),
+
   // Accepts a single origin, "*" (any origin, dev default), or a
   // comma-separated list. The browser's CORS check fails silently on
   // a single malformed origin, so parsing the list at the env boundary

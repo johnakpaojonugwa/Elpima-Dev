@@ -10,6 +10,18 @@ import {
   verifySupabaseJwt,
 } from "../../src/middlewares/auth.js";
 
+// The audience and JWKS tests mutate process.env before re-importing
+// the auth module under test (vi.resetModules + dynamic import). The
+// rest of the suite must see those env vars unset or the default
+// HS256 + no-audience path is silently broken. Clearing in afterEach
+// (not beforeEach) lets the same test set the env and read it back in
+// the same run.
+afterEach(() => {
+  delete process.env.SUPABASE_JWT_AUDIENCE;
+  delete process.env.SUPABASE_JWKS_URL;
+  vi.restoreAllMocks();
+});
+
 // =============================================================================
 // verifySupabaseJwt — pure JWT verification
 // =============================================================================
@@ -457,5 +469,85 @@ describe("requireAuth — organizationType claim propagation", () => {
 
     expect(next).toHaveBeenCalledWith();
     expect(req.user.organizationType).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// verifySupabaseJwt — SUPABASE_JWT_AUDIENCE enforcement
+// =============================================================================
+//
+// When SUPABASE_JWT_AUDIENCE is set, jsonwebtoken enforces the `aud`
+// claim against that value. We test three cases:
+//   1. Audience set, token has matching aud -> accepted.
+//   2. Audience set, token has wrong aud    -> rejected.
+//   3. Audience set, token has no aud       -> rejected (fail-closed
+//      for legacy Supabase tokens that don't stamp aud).
+//
+// Each test mutates process.env BEFORE vi.resetModules + dynamic
+// import, so the auth module re-loads with the env override in place.
+// The afterEach at the top of the file clears the env between tests.
+
+describe("verifySupabaseJwt — SUPABASE_JWT_AUDIENCE", () => {
+  const secret = env.SUPABASE_JWT_SECRET;
+
+  async function loadAuthModule() {
+    vi.resetModules();
+    return import("../../src/middlewares/auth.js");
+  }
+
+  it("accepts a token whose `aud` matches the configured audience", async () => {
+    process.env.SUPABASE_JWT_AUDIENCE = "authenticated";
+    const { verifySupabaseJwt: verifyWithAud } = await loadAuthModule();
+
+    const token = jwt.sign(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        role: "ORG_ADMIN",
+      },
+      secret,
+      { algorithm: "HS256", audience: "authenticated", expiresIn: "1h" },
+    );
+
+    const payload = verifyWithAud(token, secret);
+    expect(payload.organization_id).toBe("org-uuid");
+  });
+
+  it("rejects a token whose `aud` does not match the configured audience", async () => {
+    process.env.SUPABASE_JWT_AUDIENCE = "authenticated";
+    const { verifySupabaseJwt: verifyWithAud } = await loadAuthModule();
+
+    const token = jwt.sign(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        role: "ORG_ADMIN",
+      },
+      secret,
+      { algorithm: "HS256", audience: "some-other-audience", expiresIn: "1h" },
+    );
+
+    expect(() => verifyWithAud(token, secret)).toThrow(jwt.JsonWebTokenError);
+  });
+
+  it("rejects a token that has no `aud` claim when the env is set", async () => {
+    // A real-world scenario: a Supabase project emits tokens without
+    // `aud` by default. The moment SUPABASE_JWT_AUDIENCE is set, those
+    // tokens must fail closed — fail-open would let un-audienced
+    // tokens through, which defeats the point of the check.
+    process.env.SUPABASE_JWT_AUDIENCE = "authenticated";
+    const { verifySupabaseJwt: verifyWithAud } = await loadAuthModule();
+
+    const token = jwt.sign(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        role: "ORG_ADMIN",
+      },
+      secret,
+      { algorithm: "HS256", expiresIn: "1h" },
+    );
+
+    expect(() => verifyWithAud(token, secret)).toThrow(jwt.JsonWebTokenError);
   });
 });
