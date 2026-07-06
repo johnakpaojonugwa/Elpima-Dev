@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 
 import { env, isProd } from './config/env.js';
 import { router } from './routes/index.js';
-import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
+import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 import { morganStream } from './utils/logger.js';
 
 // Exported as a factory (not a started server) so tests can import
