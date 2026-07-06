@@ -1,20 +1,75 @@
 import jwt from "jsonwebtoken";
+import jwksRsa from "jwks-rsa";
 
 import { env } from "../config/env.js";
 import { prisma } from "../config/prisma.js";
 import { AppError } from "../utils/AppError.js";
 
+// Lazy JWKS client. Only constructed when SUPABASE_JWKS_URL is set,
+// so the default HS256 path doesn't pay any setup cost (and doesn't
+// require a network round-trip at boot).
+//
+// `cache: true` is the default in jwks-rsa but spelled out for
+// clarity — the JWKS endpoint publishes infrequently and we don't
+// want to hit it on every request. `rateLimit: true` protects the
+// upstream against a runaway verifier.
+let jwksClient;
+function getJwksClient() {
+  if (!jwksClient) {
+    jwksClient = jwksRsa({
+      jwksUri: env.SUPABASE_JWKS_URL,
+      cache: true,
+      rateLimit: true,
+    });
+  }
+  return jwksClient;
+}
+
+// Verifies an RS256 token by fetching the signing key from JWKS by
+// `kid` and delegating to jsonwebtoken. Wrapped in a Promise so the
+// function always returns a thenable — required so `requireAuth` and
+// the tests can `await` it uniformly across the HS256 and RS256 paths.
+//
+// JWKS client errors (e.g. "No matching key") are translated to
+// JsonWebTokenError so the global errorHandler classifies them as
+// 401 instead of 500 — the auth path always raises a JWT-shaped error.
+function verifyRs256WithJwks(token) {
+  return new Promise((resolve, reject) => {
+    getJwksClient().getSigningKey(token, (jwksErr, jwksKey) => {
+      if (jwksErr) {
+        return reject(new jwt.JsonWebTokenError(jwksErr.message));
+      }
+      jwt.verify(
+        token,
+        jwksKey.getPublicKey(),
+        {
+          algorithms: ["RS256"],
+          ...(env.SUPABASE_JWT_AUDIENCE
+            ? { audience: env.SUPABASE_JWT_AUDIENCE }
+            : {}),
+        },
+        (verifyErr, payload) => {
+          if (verifyErr) return reject(verifyErr);
+          resolve(payload);
+        },
+      );
+    });
+  });
+}
+
 /**
- * Verify a Supabase access token (HS256 JWT signed with the project's
- * JWT secret) and return its decoded payload.
+ * Verify a Supabase access token and return its decoded payload.
  *
  * Exported separately from `requireAuth` so tests can pin a
  * known-secret / known-payload round-trip without setting up an
  * Express req/res pair.
  *
- * Algorithm is pinned to HS256. The default in `jsonwebtoken` accepts
- * whatever the token's header advertises, so an `alg: none` or
- * `alg: RS256` (with a forged public key) would otherwise slip through.
+ * Verification path is selected at boot from `env.SUPABASE_JWKS_URL`:
+ *
+ *   - unset (default): HS256 + shared secret. Algorithm is pinned —
+ *     jsonwebtoken rejects `alg: none` or `alg: RS256` tokens.
+ *   - set:             RS256, signing key fetched from the JWKS
+ *     endpoint by `kid`. The `secret` argument is ignored.
  *
  * The custom access token hook on the Supabase project stamps
  * `organization_id` and `role` into every issued JWT from the
@@ -22,21 +77,36 @@ import { AppError } from "../utils/AppError.js";
  * authorize a request — no DB lookup required for the common path.
  *
  * `SUPABASE_JWT_AUDIENCE` (optional) is enforced as the expected
- * `aud` claim when set. Fail-closed: a token without an `aud`
- * claim is rejected when the env is set.
+ * `aud` claim on both branches. Fail-closed: a token without an
+ * `aud` claim is rejected when the env is set.
  *
- * @param {string} token  The raw JWT (no "Bearer " prefix).
- * @param {string} secret The shared secret used to sign it.
- * @returns {object}      The decoded payload.
- * @throws  {JsonWebTokenError}  Bad signature, malformed token, wrong alg, wrong aud.
- * @throws  {TokenExpiredError} Token past its `exp` claim.
+ * Deploy order: set `SUPABASE_JWKS_URL` only after the Supabase
+ * project is rotated to issue RS256 tokens. Setting it first
+ * rejects every existing HS256 token — clients re-authenticate,
+ * which is fine in steady state but is a hard 401 storm during
+ * a partial rollout.
+ *
+ * @param {string}  token   The raw JWT (no "Bearer " prefix).
+ * @param {string?} _secret The shared secret used to sign HS256
+ *                          tokens. Ignored when JWKS verification
+ *                          is enabled; kept in the signature so
+ *                          `requireAuth` doesn't have to branch.
+ * @returns {Promise<object>}  The decoded payload.
+ * @throws  {JsonWebTokenError}  Bad signature, malformed token, wrong alg,
+ *                               wrong aud, unknown kid.
+ * @throws  {TokenExpiredError}  Token past its `exp` claim.
  */
-export function verifySupabaseJwt(token, secret) {
-  return jwt.verify(token, secret, {
+export async function verifySupabaseJwt(token, _secret) {
+  const audience = env.SUPABASE_JWT_AUDIENCE
+    ? { audience: env.SUPABASE_JWT_AUDIENCE }
+    : {};
+
+  if (env.SUPABASE_JWKS_URL) {
+    return verifyRs256WithJwks(token);
+  }
+  return jwt.verify(token, _secret, {
     algorithms: ["HS256"],
-    ...(env.SUPABASE_JWT_AUDIENCE
-      ? { audience: env.SUPABASE_JWT_AUDIENCE }
-      : {}),
+    ...audience,
   });
 }
 
@@ -52,7 +122,7 @@ export function verifySupabaseJwt(token, secret) {
  * 401 "Authentication required"), so we don't have to re-classify
  * here.
  */
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const header = req.headers.authorization ?? "";
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) {
@@ -61,7 +131,7 @@ export function requireAuth(req, res, next) {
 
   let payload;
   try {
-    payload = verifySupabaseJwt(match[1], env.SUPABASE_JWT_SECRET);
+    payload = await verifySupabaseJwt(match[1], env.SUPABASE_JWT_SECRET);
   } catch {
     // Re-throw so the errorHandler can pick the right message via
     // err.name (TokenExpiredError vs JsonWebTokenError vs

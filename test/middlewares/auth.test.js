@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 
 import { env } from "../../src/config/env.js";
 import { AppError } from "../../src/utils/AppError.js";
+import { rsaKeypair, signRs256 } from "../fixtures/rsaKeypair.js";
 import {
   requireAuth,
   requireOrgType,
@@ -31,7 +32,7 @@ describe("verifySupabaseJwt", () => {
   // when not set in the environment.
   const secret = env.SUPABASE_JWT_SECRET;
 
-  it("returns the decoded payload for a valid HS256 token", () => {
+  it("returns the decoded payload for a valid HS256 token", async () => {
     const token = jwt.sign(
       {
         sub: "auth-user-uuid",
@@ -43,32 +44,32 @@ describe("verifySupabaseJwt", () => {
       { algorithm: "HS256", expiresIn: "1h" },
     );
 
-    const payload = verifySupabaseJwt(token, secret);
+    const payload = await verifySupabaseJwt(token, secret);
 
     expect(payload.sub).toBe("auth-user-uuid");
     expect(payload.organization_id).toBe("org-uuid");
     expect(payload.role).toBe("ORG_ADMIN");
   });
 
-  it("rejects a token signed with a different secret", () => {
+  it("rejects a token signed with a different secret", async () => {
     const token = jwt.sign({ sub: "x" }, "wrong-secret", {
       algorithm: "HS256",
       expiresIn: "1h",
     });
 
-    expect(() => verifySupabaseJwt(token, secret)).toThrow(
+    await expect(verifySupabaseJwt(token, secret)).rejects.toThrow(
       jwt.JsonWebTokenError,
     );
   });
 
-  it("rejects an expired token with TokenExpiredError", () => {
+  it("rejects an expired token with TokenExpiredError", async () => {
     const token = jwt.sign(
       { sub: "x" },
       secret,
       { algorithm: "HS256", expiresIn: -1 }, // already expired
     );
 
-    expect(() => verifySupabaseJwt(token, secret)).toThrow(
+    await expect(verifySupabaseJwt(token, secret)).rejects.toThrow(
       jwt.TokenExpiredError,
     );
   });
@@ -94,7 +95,9 @@ describe("verifySupabaseJwt", () => {
     // alg: none case; the name-based classification in
     // errorHandler.js handles it. We don't pin the specific
     // subclass because it varies across versions.
-    expect(() => verifySupabaseJwt(forgedToken, secret)).toThrow();
+    await expect(
+      verifySupabaseJwt(forgedToken, secret),
+    ).rejects.toThrow();
   });
 });
 
@@ -136,7 +139,7 @@ describe("requireAuth", () => {
     expect(next.mock.calls[0][0].status).toBe(401);
   });
 
-  it("populates req.user and calls next() with no error for a valid token", () => {
+  it("populates req.user and calls next() with no error for a valid token", async () => {
     const token = jwt.sign(
       {
         sub: "auth-user-uuid",
@@ -151,7 +154,7 @@ describe("requireAuth", () => {
       authorization: `Bearer ${token}`,
     });
 
-    requireAuth(req, res, next);
+    await requireAuth(req, res, next);
 
     expect(next).toHaveBeenCalledWith(); // no error
     expect(req.user).toEqual({
@@ -162,7 +165,7 @@ describe("requireAuth", () => {
     });
   });
 
-  it("rejects a token that lacks the organization_id custom claim", () => {
+  it("rejects a token that lacks the organization_id custom claim", async () => {
     // A Supabase access token without organization_id means the
     // custom access token hook hasn't run, or the token predates
     // the hook. Either way, RLS would not see a tenant and the
@@ -176,7 +179,7 @@ describe("requireAuth", () => {
       authorization: `Bearer ${token}`,
     });
 
-    requireAuth(req, res, next);
+    await requireAuth(req, res, next);
 
     const err = next.mock.calls[0][0];
     expect(err).toBeInstanceOf(AppError);
@@ -425,7 +428,7 @@ describe("requireOrgType — JWT claim short-circuits the DB lookup", () => {
 describe("requireAuth — organizationType claim propagation", () => {
   const secret = env.SUPABASE_JWT_SECRET;
 
-  it("populates req.user.organizationType when the token carries the claim", () => {
+  it("populates req.user.organizationType when the token carries the claim", async () => {
     const token = jwt.sign(
       {
         sub: "auth-user-uuid",
@@ -441,13 +444,13 @@ describe("requireAuth — organizationType claim propagation", () => {
     const res = {};
     const next = vi.fn();
 
-    requireAuth(req, res, next);
+    await requireAuth(req, res, next);
 
     expect(next).toHaveBeenCalledWith();
     expect(req.user.organizationType).toBe("HOSPITAL");
   });
 
-  it("leaves req.user.organizationType undefined when the claim is absent", () => {
+  it("leaves req.user.organizationType undefined when the claim is absent", async () => {
     // Tokens issued before the hook was extended do not carry
     // organization_type. requireAuth must still authenticate; the
     // field is just undefined on req.user.
@@ -465,7 +468,7 @@ describe("requireAuth — organizationType claim propagation", () => {
     const res = {};
     const next = vi.fn();
 
-    requireAuth(req, res, next);
+    await requireAuth(req, res, next);
 
     expect(next).toHaveBeenCalledWith();
     expect(req.user.organizationType).toBeUndefined();
@@ -509,7 +512,7 @@ describe("verifySupabaseJwt — SUPABASE_JWT_AUDIENCE", () => {
       { algorithm: "HS256", audience: "authenticated", expiresIn: "1h" },
     );
 
-    const payload = verifyWithAud(token, secret);
+    const payload = await verifyWithAud(token, secret);
     expect(payload.organization_id).toBe("org-uuid");
   });
 
@@ -527,7 +530,9 @@ describe("verifySupabaseJwt — SUPABASE_JWT_AUDIENCE", () => {
       { algorithm: "HS256", audience: "some-other-audience", expiresIn: "1h" },
     );
 
-    expect(() => verifyWithAud(token, secret)).toThrow(jwt.JsonWebTokenError);
+    await expect(verifyWithAud(token, secret)).rejects.toThrow(
+      jwt.JsonWebTokenError,
+    );
   });
 
   it("rejects a token that has no `aud` claim when the env is set", async () => {
@@ -548,6 +553,154 @@ describe("verifySupabaseJwt — SUPABASE_JWT_AUDIENCE", () => {
       { algorithm: "HS256", expiresIn: "1h" },
     );
 
-    expect(() => verifyWithAud(token, secret)).toThrow(jwt.JsonWebTokenError);
+    await expect(verifyWithAud(token, secret)).rejects.toThrow(
+      jwt.JsonWebTokenError,
+    );
+  });
+});
+
+// =============================================================================
+// verifySupabaseJwt — JWKS / RS256
+// =============================================================================
+//
+// When SUPABASE_JWKS_URL is set, the verifier fetches the signing key
+// from a JWKS endpoint by `kid` and verifies the token with RS256.
+// We stub `jwks-rsa` at the module boundary with `vi.doMock` +
+// `vi.resetModules` (the same pattern the prisma tests in this file
+// already use) so the SUT's `import jwksRsa from "jwks-rsa"` is
+// replaced by a stub client whose `getSigningKey` we control.
+//
+// The actual RS256 sign/verify round-trip is real — we generate an
+// RSA keypair with node:crypto, sign the token with the private key,
+// and let the SUT verify it with the public key (returned by the
+// stub JWKS client). Mocking jsonwebtoken.verify would defeat the
+// test; the only thing we want to control is the JWKS lookup.
+
+describe("verifySupabaseJwt — JWKS / RS256", () => {
+  const KID = "test-key-1";
+  const FAKE_JWKS_URL = "https://example.test/.well-known/jwks.json";
+
+  async function loadAuthModule() {
+    vi.resetModules();
+    return import("../../src/middlewares/auth.js");
+  }
+
+  it("accepts a token whose kid resolves to a JWKS key (RS256 round-trip)", async () => {
+    process.env.SUPABASE_JWKS_URL = FAKE_JWKS_URL;
+    const { publicKey, privateKey } = rsaKeypair();
+    // jwks-rsa is CJS with module.exports = factory. The ESM default
+    // import in the SUT resolves to that factory, so the mock must
+    // be { default: vi.fn(() => stub) }.
+    vi.doMock("jwks-rsa", () => ({
+      default: vi.fn(() => ({
+        getSigningKey: (_token, cb) =>
+          cb(null, { getPublicKey: () => publicKey }),
+      })),
+    }));
+    const { verifySupabaseJwt: verifyWithJwks } = await loadAuthModule();
+
+    const token = signRs256(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        role: "ORG_ADMIN",
+      },
+      privateKey,
+      KID,
+    );
+
+    const payload = await verifyWithJwks(token, "ignored-secret");
+    expect(payload.organization_id).toBe("org-uuid");
+    expect(payload.role).toBe("ORG_ADMIN");
+  });
+
+  it("rejects an HS256 token when JWKS is the configured verifier (alg pin)", async () => {
+    // With algorithms: ["RS256"], jsonwebtoken rejects an HS256 token
+    // header. The error is a JsonWebTokenError with message "invalid
+    // algorithm".
+    //
+    // Note: our verifyRs256WithJwks wrapper calls the JWKS resolver
+    // before handing off to jsonwebtoken (so it can translate JWKS
+    // errors), so getSigningKey IS called once — the algorithm check
+    // happens at the jwt.verify step, not before the lookup.
+    process.env.SUPABASE_JWKS_URL = FAKE_JWKS_URL;
+    const { publicKey } = rsaKeypair();
+    vi.doMock("jwks-rsa", () => ({
+      default: vi.fn(() => ({
+        getSigningKey: (_token, cb) =>
+          cb(null, { getPublicKey: () => publicKey }),
+      })),
+    }));
+    const { verifySupabaseJwt: verifyWithJwks } = await loadAuthModule();
+
+    const token = jwt.sign(
+      {
+        sub: "attacker",
+        organization_id: "org-uuid",
+        role: "PLATFORM_ADMIN",
+      },
+      "any-secret",
+      { algorithm: "HS256", expiresIn: "1h" },
+    );
+
+    await expect(verifyWithJwks(token, "any-secret")).rejects.toThrow(
+      jwt.JsonWebTokenError,
+    );
+  });
+
+  it("translates JWKS lookup failures to JsonWebTokenError (401, not 500)", async () => {
+    // The jwks-rsa client surfaces plain Error objects (e.g. "No
+    // matching key") through its callback. We wrap those in
+    // JsonWebTokenError at the auth boundary so the global
+    // errorHandler classifies them as 401 instead of 500.
+    process.env.SUPABASE_JWKS_URL = FAKE_JWKS_URL;
+    const { privateKey } = rsaKeypair();
+    const token = signRs256(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        role: "ORG_ADMIN",
+      },
+      privateKey,
+      "unknown-kid",
+    );
+
+    vi.doMock("jwks-rsa", () => ({
+      default: vi.fn(() => ({
+        getSigningKey: (_token, cb) =>
+          cb(new Error("No matching key"), null),
+      })),
+    }));
+    const { verifySupabaseJwt: verifyWithJwks } = await loadAuthModule();
+
+    let caught;
+    try {
+      await verifyWithJwks(token, "ignored-secret");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(jwt.JsonWebTokenError);
+    expect(caught.message).toBe("No matching key");
+  });
+
+  it("HS256 still works when SUPABASE_JWKS_URL is unset (regression guard)", async () => {
+    // No vi.doMock — the real jwks-rsa is loaded but never constructed
+    // because the env is unset. This catches the branch disappearing
+    // during a refactor.
+    const { verifySupabaseJwt: verifyWithoutJwks } = await loadAuthModule();
+
+    const secret = env.SUPABASE_JWT_SECRET;
+    const token = jwt.sign(
+      {
+        sub: "auth-user-uuid",
+        organization_id: "org-uuid",
+        role: "ORG_ADMIN",
+      },
+      secret,
+      { algorithm: "HS256", expiresIn: "1h" },
+    );
+
+    const payload = await verifyWithoutJwks(token, secret);
+    expect(payload.organization_id).toBe("org-uuid");
   });
 });

@@ -35,6 +35,18 @@ const envSchema = z.object({
   // leave this unset until the hook is configured to emit one.
   SUPABASE_JWT_AUDIENCE: z.string().min(1).optional(),
 
+  // Optional. When set, verifySupabaseJwt fetches signing keys from
+  // this JWKS endpoint and verifies tokens with RS256 (Supabase's
+  // path to asymmetric JWTs). When unset, the legacy HS256 +
+  // shared-secret path is used.
+  //
+  // Deploy order: this must be set ONLY after the Supabase project is
+  // rotated to issue RS256 tokens and expose a JWKS endpoint. Setting
+  // it first rejects every existing HS256 token — clients re-auth,
+  // which is fine, but a misconfigured deploy becomes a hard 401 storm
+  // until rollback. See src/middlewares/auth.js for the verifier.
+  SUPABASE_JWKS_URL: z.string().url().optional(),
+
   // Accepts a single origin, "*" (any origin, dev default), or a
   // comma-separated list. The browser's CORS check fails silently on
   // a single malformed origin, so parsing the list at the env boundary
