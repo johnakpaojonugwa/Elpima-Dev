@@ -15,9 +15,13 @@
 // unexpected.
 
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
 
-const envPath = new URL("../.env", import.meta.url).pathname;
+// On Windows, `new URL("../.env", import.meta.url).pathname` returns
+// `/C:/path/.env` (with a leading slash that breaks existsSync).
+// fileURLToPath normalizes that to `C:\path\.env`.
+const envPath = fileURLToPath(new URL("../.env", import.meta.url));
 if (existsSync(envPath)) {
   loadDotenv({ path: envPath });
 }

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { env } from "./src/config/env.js";
 import { createApp } from "./src/app.js";
 import { connectDb, disconnectDb } from "./src/config/prisma.js";

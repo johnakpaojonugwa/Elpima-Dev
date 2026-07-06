@@ -1,8 +1,16 @@
-import "dotenv/config";
 import { z } from "zod";
 
 // Fail fast on boot if config is missing/malformed, rather than
 // discovering it later via a cryptic runtime error mid-request.
+//
+// .env loading is the entry point's job: server.js does
+// `import "dotenv/config"` for `node server.js`, test/setup.js does
+// the same for vitest, and prisma.config.ts does it for migrations.
+// This module just validates whatever's in process.env at the time
+// it's imported. Keeping .env loading out of here means test setups
+// that vi.resetModules() the module graph (e.g. to exercise env-var
+// overrides) don't re-run the .env load — which would silently
+// re-introduce vars the test had just deleted.
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
