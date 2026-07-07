@@ -7,8 +7,24 @@ const devFormat = combine(
   colorize(),
   timestamp({ format: "HH:mm:ss" }),
   errors({ stack: true }),
-  printf(({ level, message, timestamp: ts, stack }) => {
-    return `${ts} ${level}: ${stack || message}`;
+  printf((info) => {
+    const {
+      timestamp: ts,
+      level,
+      message,
+      stack,
+      correlationId,
+      method,
+      url,
+      status,
+      durationMs,
+    } = info;
+    const summary = stack || message;
+    const accessLine =
+      correlationId && method
+        ? ` ${method} ${url} ${status} ${durationMs}ms [${correlationId}]`
+        : "";
+    return `${ts} ${level}: ${summary}${accessLine}`;
   }),
 );
 

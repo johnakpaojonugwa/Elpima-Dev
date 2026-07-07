@@ -132,11 +132,11 @@ export async function requireAuth(req, res, next) {
   let payload;
   try {
     payload = await verifySupabaseJwt(match[1], env.SUPABASE_JWT_SECRET);
-  } catch {
+  } catch (err) {
     // Re-throw so the errorHandler can pick the right message via
     // err.name (TokenExpiredError vs JsonWebTokenError vs
     // NotBeforeError). Wrapping in AppError would lose that signal.
-    return next(new AppError(401, "Authentication required"));
+    return next(err);
   }
 
   // Custom-claim presence is the security boundary: a token without
