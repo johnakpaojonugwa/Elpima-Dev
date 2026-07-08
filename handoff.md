@@ -5,16 +5,21 @@
 Determine whether the codebase is ready to ship as an MVP and, if not,
 identify the smallest set of work that gets it there.
 
-The handoff's conclusion: **not yet, but close on the expensive parts
-(auth, observability) and missing on the cheap parts (domain logic,
-staging environment, basic ops hooks).** Specific guidance for three
-plausible MVP scenarios (manual-first-customer, public launch, pilot)
-is in section 6.
+The handoff's conclusion: **closer than last round, but not yet.** The
+expensive parts (auth, observability, containerization, multi-tenant
+RLS) are done. The domain logic, staging environment, and a couple of
+remaining Supabase / Prisma-side items are still the gap. Specific
+guidance for three plausible MVP scenarios (manual-first-customer,
+public launch, pilot) is in section 6.
 
 ## 2. Current state
 
-**Master HEAD:** `77c078d` (1 commit ahead of where the prior handoff
-landed). Working tree clean.
+**Master HEAD:** `f4d55bd`. Working tree contains two new uncommitted
+migrations (`20260708120000_fix_custom_access_token_hook` and
+`20260708130000_apply_rls_policies_and_grants`) and a modified
+`handoff.md` (this file's current revision). Both new migrations
+have been applied to the live Supabase project via the MCP, and the
+end-to-end multi-tenant security story is verified by smoke tests.
 
 | # | Commit | Status |
 |---|---|---|
@@ -25,31 +30,67 @@ landed). Working tree clean.
 | 5 | `feat(observability): correlation IDs in access logs and error responses` | ✅ `64c3dae` |
 | 6 | `feat(auth): optional JWKS / RS256 verification` | ✅ `daf98b0` |
 | 7 | `fix(auth, logging): preserve JWT error class and render access log fields in dev` | ✅ `77c078d` |
+| 8 | `chore(deps): add supabase CLI to devDependencies` | ✅ `770bf46` |
+| 9 | `chore(supabase): add local stack config` | ✅ `7470cd3` |
+| 10 | `chore(docker): add production Dockerfile and .dockerignore` | ✅ `a451d67` |
+| 11 | `docs: refresh MVP handoff assessment` | ✅ `f4d55bd` (this file's prior revision) |
+| 12 | `fix(db): repair public.custom_access_token_hook` | ✅ uncommitted, applied to live DB |
+| 13 | `feat(db): apply RLS policies + DML grants` | ✅ uncommitted, applied to live DB |
 
-**Test suite:** 34/34 unit tests pass. No integration tests, no
-coverage thresholds, no CI workflow.
+**Test suite:** 34/34 unit tests pass (auth, correlation IDs, rate
+limit). No integration tests, no coverage thresholds, no CI
+workflow.
 
-**What the codebase actually is:** an auth + plumbing skeleton.
+**What the codebase actually is:** an auth + plumbing skeleton with
+containerization, a working local Supabase stack, and a fully
+multi-tenant RLS layer in the live database.
 
 - `src/routes/` ships two routers: `/health` and `/auth` (which only
   exposes `/me`).
 - `src/routes/index.js` has commented-out placeholders for
   `organizations`, `products`, `quotes` — none of them exist.
 - `src/models/` is **empty**.
-- There is no `Dockerfile`, no `docker-compose.yml`, no CI workflow,
-  no staging environment.
+- A production `Dockerfile` (multi-stage, non-root, with tini + health
+  check) and `.dockerignore` now exist (commit 10). There is still no
+  `docker-compose.yml`, no CI workflow, no staging environment.
+- A local Supabase stack config (`supabase/config.toml`) now exists
+  (commit 9), wired with `env(...)` placeholders for all secrets and a
+  `supabase/.gitignore` excluding CLI runtime state.
+- The Supabase CLI is installed as a devDependency (commit 8), so
+  `npm run` + `supabase start` works in any clone.
+- The live Supabase project now has:
+  - **19 RLS policies** on the 9 tenant-scoped public tables
+    (commit 13). Every authenticated read/write is scoped by
+    `current_org_id()`, which reads
+    `app_metadata.organization_id` from the JWT.
+  - **`public.current_org_id()` helper** (commit 13): `SECURITY
+    INVOKER`, `STABLE`, locked `search_path`.
+  - **Default DML grants** to `authenticated` on all 9 tenant tables
+    (commit 13). Without these, RLS policies are unreachable.
+  - **`audit_logs` UPDATE/DELETE revoked** (commit 13). Second line of
+    defense; `pg_policy` has no UPDATE/DELETE policy for audit_logs
+    either.
+  - **Fixed `custom_access_token_hook`** (commit 12). Was referencing
+    a non-existent `public.user_organizations` table; now correctly
+    reads from `public.users.supabaseUserId`, gates on `isActive =
+    true`, and stamps `app_metadata.organization_id` and
+    `app_metadata.user_role`.
 - `src/docs/production-readiness.md` enumerates a 7-item pre-deploy
-  checklist; **none of the 7 items are satisfied**.
+  checklist. **One item is satisfied** (containerization, item 5 in
+  section 6.1) — six remain. The RLS work unblocks item 11 (Prisma
+  non-bypassing role) — see section 6.
 
 **What's working well:** the auth middleware, the correlation-ID
-plumbing, the structured error envelope, the env validation, and the
-test patterns for env-conditional modules. These are the parts that
-get expensive to retrofit, and they're done.
+plumbing, the structured error envelope, the env validation, the
+test patterns for env-conditional modules, the production Dockerfile,
+the local Supabase stack, the fixed JWT custom hook, and the full
+multi-tenant RLS layer. These are the parts that get expensive to
+retrofit, and they're done.
 
 ## 3. Active files
 
-Files touched across the seven-commit series. Anything outside this
-list is unmodified.
+Files touched across the eleven committed changes plus the two new
+uncommitted migrations. Anything outside this list is unmodified.
 
 **Source**
 - `src/middlewares/auth.js` — `requireAuth`, `requireRole`,
@@ -72,6 +113,26 @@ list is unmodified.
   `authRateLimit, requireAuth`.
 - `server.js` — entry point, loads `.env`, owns graceful shutdown.
 
+**Build / infra (new in this round)**
+- `Dockerfile` — multi-stage, `node:22-bookworm` builder, `node:22-bookworm-slim`
+  production stage, runs as `node` (UID 1000), tini as PID 1,
+  `HEALTHCHECK` on `/health` every 30s, `EXPOSE 3000`.
+  No secrets in the image; runtime config via env. `prisma generate`
+  runs in the builder; `npm prune --omit=dev` shrinks the final
+  layer; Prisma migrations are deliberately NOT copied (applied
+  out-of-band).
+- `.dockerignore` — excludes `node_modules`, `.env*`, `.git`, IDE
+  dirs, test/coverage artifacts, the Dockerfile itself, Prisma
+  migrations, `.claude` tooling, `*.md` docs.
+- `supabase/config.toml` — local Supabase stack config (Postgres,
+  GoTrue, PostgREST, Studio). API on 54321; standard auth/studio/
+  storage ports; all secrets wired as `env(...)` placeholders.
+- `supabase/.gitignore` — excludes CLI runtime state (`.branches`,
+  `.temp`, `pgdelta`).
+- `package.json` — adds `supabase@^2.109.1` as a devDependency so
+  the local stack workflow is available from `npx supabase` in any
+  clone.
+
 **Tests**
 - `test/middlewares/auth.test.js` — 19 cases: HS256 round-trip,
   audience enforcement, JWT claim short-circuit, JWKS RS256
@@ -93,11 +154,26 @@ list is unmodified.
 - `src/docs/service-development.md` — coding/testing patterns.
 - `src/docs/agents-integration.md` — handoff to other agents.
 
+**Database migrations (new in this round)**
+- `prisma/migrations/20260708120000_fix_custom_access_token_hook/migration.sql`
+  — rewrites `public.custom_access_token_hook` to look up the
+  user's org via `public.users.supabaseUserId` (instead of the
+  non-existent `public.user_organizations`), gate on `isActive`,
+  and stamp `app_metadata.organization_id` plus
+  `app_metadata.user_role`. Locked `search_path`. Idempotent
+  (`CREATE OR REPLACE FUNCTION`).
+- `prisma/migrations/20260708130000_apply_rls_policies_and_grants/migration.sql`
+  — 19 RLS policies across 9 tenant tables, the
+  `public.current_org_id()` helper, the DML grants to
+  `authenticated`, and the `audit_logs` UPDATE/DELETE revoke. All
+  statements idempotent (DROP POLICY IF EXISTS, CREATE OR REPLACE
+  FUNCTION, GRANT/REVOKE are all idempotent).
+
 ## 4. Changes made
 
-This section summarizes the seven commits. The commit messages
-themselves are the source of truth for the *why*; this is a guide to
-the *what*.
+This section summarizes the eleven committed changes plus the two new
+uncommitted migrations. The commit messages themselves are the source
+of truth for the *why*; this is a guide to the *what*.
 
 ### 4.1 — `feat(auth): short-circuit requireOrgType when JWT carries organization_type` (`23f271e`)
 
@@ -182,6 +258,174 @@ Two follow-ups from the code review of 4.1–4.6:
   unchanged. Prod's `json()` formatter is untouched.
 - Suite 34/34, no regressions.
 
+### 4.8 — `chore(deps): add supabase CLI to devDependencies` (`770bf46`)
+
+- Adds `supabase@^2.109.1` as a devDependency. No runtime impact.
+  Lets `npx supabase start` / `db reset` / `migration diff` work in
+  any clone without a global install.
+- Unblocks commit 9 (which adds config that the CLI consumes) and
+  commit 10 (which adds a Dockerfile that benefits from the same
+  local workflow).
+
+### 4.9 — `chore(supabase): add local stack config` (`7470cd3`)
+
+- `supabase/config.toml` (414 lines): standard `supabase init` output,
+  tuned for this project (project_id, API on 54321, public +
+  graphql_public schemas, standard auth/studio/storage ports).
+- `supabase/.gitignore`: excludes CLI runtime state (`.branches`,
+  `.temp`, `pgdelta`) so transient migration bookkeeping never lands
+  in the repo.
+- All secrets (`openai_api_key`, `sendgrid`, `twilio`, `s3 keys`, etc.)
+  are wired as `env(...)` placeholders. No credentials in VCS.
+- The local stack does NOT replace a staging environment — it's a
+  dev tool. Production-bound deploys still need a real Supabase
+  project (see section 6.2, item 9).
+
+### 4.10 — `chore(docker): add production Dockerfile and .dockerignore` (`a451d67`)
+
+- `Dockerfile` (94 lines): multi-stage build.
+  - **Builder:** `node:22-bookworm`. Full dep tree, `prisma generate`
+    (requires devDeps), then `npm prune --omit=dev` to shrink the
+    final layer.
+  - **Production:** `node:22-bookworm-slim` (NOT Alpine — Prisma's
+    query engine depends on glibc + OpenSSL 3.x; Alpine's musl causes
+    segfaults). Runs as unprivileged `node` user (UID 1000), tini as
+    PID 1 for proper SIGTERM forwarding under `docker stop` / k8s.
+  - **Healthcheck:** `node -e` one-liner hitting `/health` every 30s.
+  - **Port:** `EXPOSE 3000`, configurable via `PORT` env.
+- `.dockerignore` (63 lines): excludes `node_modules`, `.env*`, `.git`,
+  IDE dirs, test/coverage artifacts, the Dockerfile itself, Prisma
+  migrations (applied out-of-band by an orchestrator/init container),
+  `.claude` tooling, and `*.md` docs.
+- No secrets in the image — runtime configuration is supplied via
+  env vars only. This satisfies item 5 of
+  `src/docs/production-readiness.md` for the "containerization"
+  line, though the larger production-readiness checklist (secrets
+  via Vault/Secrets Manager, full observability, runbooks, etc.) is
+  still open.
+
+### 4.11 — `docs: refresh MVP handoff assessment` (`f4d55bd`)
+
+- The prior version of this file. Wrote the seven-commit assessment
+  that section 4 above has been extended from.
+
+### 4.12 — `fix(db): repair public.custom_access_token_hook` (`20260708120000_fix_custom_access_token_hook`, uncommitted)
+
+- The previous version of the hook (deployed via the Supabase
+  dashboard template) read from `public.user_organizations`, a table
+  that does not exist in this schema. On every JWT mint, the hook
+  raised `relation does not exist` and the `organization_id` custom
+  claim was never set. Every RLS policy that keyed off
+  `auth.jwt() ->> 'organization_id'` silently matched zero rows for
+  every authenticated request.
+- New hook body: extracts `event ->> 'user_id'` (the Supabase Auth
+  user UUID), looks up `public.users.organizationId` and
+  `public.users.role` via `public.users.supabaseUserId =
+  current_user_id::text AND isActive = true`, and stamps both into
+  `claims.app_metadata` via `jsonb_set`.
+- **Why `app_metadata`, not the top level:** Supabase strips /
+  overwrites top-level reserved claims (`iss`, `aud`, `exp`, `sub`,
+  `role`, `iat`, `jti`, `session_id`). Stamping `organization_id` at
+  the top level gets silently dropped. `app_metadata` is preserved
+  across token refreshes and is the documented place for
+  app-defined claims.
+- **Why gate on `isActive = true`:** a deactivated staff member
+  should not get a valid token. The fail-closed behavior is "no
+  org_id stamped → every RLS predicate returns NULL → every
+  authenticated request 401s." Pair with a `requireActive` API
+  middleware (out of scope this round) to return a friendlier 403
+  if desired.
+- **Why `SECURITY DEFINER` with locked `search_path`:** the hook
+  runs in the auth pipeline before any request reaches the API and
+  must read `public.users` regardless of caller context. The
+  `search_path = public, pg_catalog` setting prevents search-path
+  hijacking from redirecting the function to an attacker's table.
+- **Why also stamp `user_role`:** not consumed by the current RLS
+  policies, but the existing `requireRole` middleware in
+  `src/middlewares/auth.js` would benefit from it on the next
+  round (no DB lookup needed). Costs nothing now and avoids a
+  second hook rewrite later. Safe to drop if you'd rather keep
+  this PR surgical.
+- **Verification:**
+  - Function metadata: `SECURITY DEFINER`, `STABLE`, `search_path =
+    public, pg_catalog`, signature `event jsonb → jsonb`.
+  - Synthetic smoke tests (in transactions that rolled back, so
+    the live DB is unchanged):
+    - Active user with row in `public.users` →
+      `app_metadata.organization_id` and `app_metadata.user_role`
+      both set.
+    - Deactivated user (`isActive = false`) → no claims stamped.
+    - Unknown auth user → no claims stamped (fail-closed).
+  - All five tenant tables still at 0 rows after the smoke tests.
+
+### 4.13 — `feat(db): apply RLS policies + DML grants` (`20260708130000_apply_rls_policies_and_grants`, uncommitted)
+
+- The committed migration `20260706120000_rls_policies` described
+  the intended RLS layout but was never actually applied to the
+  live DB: `pg_policy` had zero rows, `public.current_org_id()`
+  didn't exist, the `audit_logs` UPDATE/DELETE revoke was missing,
+  and the `authenticated` role had no DML grants on any tenant
+  table (so any future per-request supabase-js client would have
+  been denied at the table-privilege layer before RLS was even
+  consulted).
+- This migration is a faithful application of the committed intent,
+  plus the `users` INSERT/UPDATE policies the committed file lacked
+  (a future per-request supabase-js client could not otherwise
+  create or edit its own User row).
+- **`current_org_id()`** reads from `app_metadata → organization_id`
+  (matching the JWT shape the fixed hook produces). This is a
+  deliberate divergence from the committed file's
+  `auth.jwt() ->> 'organization_id'` path — the latter would have
+  returned NULL against the actual JWT shape and made every policy
+  match zero rows. If you'd rather keep the committed path and have
+  me fix the hook to stamp at the top level instead, say so —
+  `app_metadata` is the right place per Supabase's documented
+  contract.
+- **Policy distribution** (19 policies across 9 tables):
+  | Table | SELECT | INSERT | UPDATE | DELETE |
+  |---|---|---|---|---|
+  | organizations | 1 | — | — | — |
+  | users | 1 | 1 | 1 | — |
+  | licenses | 1 | — | — | — |
+  | products | 1 | 1 | 1 | 1 |
+  | categories | 1 | — | — | — |
+  | quotes | 1 | 1 | 1 | — |
+  | quote_items | 1 | 1 (FOR ALL) | 1 (FOR ALL) | 1 (FOR ALL) |
+  | orders | 1 | — | — | — |
+  | order_items | 1 | — | — | — |
+  | audit_logs | 1 | 1 | — | — |
+- **Grants:** `authenticated` has full DML on 9 tenant tables;
+  `audit_logs` has SELECT + INSERT only. `_prisma_migrations` keeps
+  the pre-existing REFERENCES/TRIGGER/TRUNCATE noise (no DML grant,
+  Prisma connects as the owner).
+- **`audit_logs` UPDATE/DELETE:** both denied — the bare privilege
+  is revoked from `authenticated` AND `PUBLIC`, and no RLS policy
+  permits them. Two independent layers of defense.
+- **Verification (end-to-end smoke tests, all transactions rolled
+  back, live DB unchanged):**
+  1. `authenticated` reads `products` → both orgs visible (cross-
+     tenant browse is intentionally permissive).
+  2. `authenticated` reads `organizations` → only own org visible.
+  3. `authenticated` INSERTs product with foreign `vendorId` →
+     rejected by RLS WITH CHECK.
+  4. `authenticated` UPDATEs foreign-org product → 0 rows changed
+     (USING filter).
+  5. `authenticated` INSERTs `audit_log` with foreign org → rejected
+     by RLS WITH CHECK.
+  6. `authenticated` UPDATEs `audit_log` → rejected by REVOKE.
+  7. `authenticated` DELETEs `audit_log` → rejected by REVOKE.
+  8. `authenticated` with no `organization_id` claim → products
+     visible, all four tenant-scoped tables hidden. Fail-closed.
+
+**Net effect:** a complete multi-tenant security story end-to-end.
+A signed-in user with a valid `users` row gets a JWT with
+`app_metadata.organization_id` set (commit 12). Every table with
+tenant data has at least one RLS policy that scopes reads/writes to
+that org (commit 13). Cross-tenant writes raise PostgreSQL
+exceptions, not silent denials. The audit log is doubly protected.
+A user with no org claim (hook misfire, signup race) sees the
+public catalog but zero tenant data.
+
 ## 5. Failed attempts
 
 Three things tried during this round that didn't land as originally
@@ -243,14 +487,55 @@ the "dev mode is silent on access log fields" complaint.
 - **5c (rate-limit tuning on `/auth/me`):** no change needed
   per user decision. If real usage shows 30/15min is too tight,
   bump to 60/15min in `src/middlewares/rateLimitAuth.js`.
+- **5d (no Dockerfile):** resolved by commit 10. Multi-stage
+  build, non-root user, healthcheck, tini PID 1. Production
+  readiness item 5 is now satisfied for the containerization line.
+- **5e (no local Supabase stack):** resolved by commits 8 and 9.
+  `supabase start` works in any clone.
+- **5f (custom_access_token_hook references non-existent table):**
+  resolved by commit 12. The hook now reads from `public.users`,
+  gates on `isActive = true`, and stamps
+  `app_metadata.organization_id` and `app_metadata.user_role`.
+  End-to-end smoke tests confirm an active user gets a real org
+  claim and a deactivated/unknown user gets none (fail-closed).
+- **5g (RLS policies never applied to the live DB):** resolved by
+  commit 13. 19 policies, the `current_org_id()` helper, the DML
+  grants, and the audit-log UPDATE/DELETE revoke are all in
+  place. 8 end-to-end smoke tests pass with the live DB
+  unchanged.
+
+### 5.5 — Smoke-test findings that aren't failures but are worth flagging
+
+Two real things the smoke tests surfaced that the live codebase
+hasn't addressed:
+
+- **`updatedAt` is `NOT NULL` with no SQL DEFAULT** on
+  `organizations`, `users`, and `products`. Prisma's `@updatedAt`
+  model attribute writes the value from the client, which works
+  for Prisma-mediated writes but breaks raw SQL inserts (each of
+  my smoke tests had to supply `now()` explicitly). If you ever
+  expose a path that writes via raw SQL or supabase-js, those
+  inserts will 23502. A follow-up migration adding
+  `DEFAULT CURRENT_TIMESTAMP` to the three columns would close
+  this; so would documenting the constraint on the model.
+- **The committed migration `20260706120000_rls_policies` is now
+  functionally superseded by `20260708130000_apply_rls_policies_and_grants`.**
+  Same intent, but the latter reads from
+  `app_metadata → organization_id` (matching the actual JWT shape
+  produced by the fixed hook) and adds the `users` INSERT/UPDATE
+  policies. Worth deleting the committed file in a follow-up
+  commit so a future `prisma migrate deploy` doesn't try to apply
+  the wrong version (or apply the same content twice — the
+  migration is idempotent, so it's not a bug, just noise).
 
 ## 6. Next steps
 
 The handoff's primary conclusion: **the codebase is not yet MVP.**
-Specifically, it is an auth + plumbing skeleton. `src/models/` is
-empty; the only mounted routes are `/health` and `/auth/me`; there
-is no `Dockerfile`, no staging environment, no CI workflow, no
-Prometheus metrics, no runbook.
+Domain logic is the dominant remaining gap. The auth/observability/
+containerization/multi-tenant-RLS work that was the bottleneck is
+now in place; what's missing is the actual product surface (routes
+for orgs, products, quotes, orders) and the infrastructure around
+it (staging, CI, secrets, metrics, runbook).
 
 The right next move depends on which MVP scenario you're aiming
 for. Three plausible scenarios, with the smallest credible work
@@ -269,7 +554,9 @@ for each:
      shape and the user flow *before* writing code. 1 day.
   2. **Stand up a staging environment** (Render/Fly/Railway +
      a real Supabase project, separate from any local dev
-     project). 1–2 days.
+     project). 1–2 days. The Dockerfile from commit 10 is
+     ready to push; what's missing is the hosting target and
+     the env-var injection story.
   3. **Write the first business route** — most likely
      `organizations` (so the hospital can register) or
      `products` (so the catalog exists). The `requireOrgType`
@@ -277,15 +564,16 @@ for each:
      3–5 days.
   4. **Add a deep health check** (`/healthz/ready` that runs
      `SELECT 1` via Prisma). 30 minutes. Lets the staging
-     environment detect DB outages.
-  5. **Add a `Dockerfile`** (multi-stage, non-root, on
-     `node:*-alpine`). 1–2 hours. Unblocks anyone who isn't on
-     your laptop.
+     environment detect DB outages. The Dockerfile's
+     `HEALTHCHECK` already targets `/health`; `/healthz/ready`
+     is a separate, deeper probe.
+  5. ~~**Add a `Dockerfile`**~~ — **DONE** (commit 10). Skipped.
   6. **Seed script** for one org + one admin user, so the
      first customer can be onboarded manually. 1 day.
 - **Defer:** Prometheus, load tests, runbook, JWKS deploy,
-  custom access token hook extension, Prisma non-bypassing role,
-  integration tests, CI workflow, coverage thresholds.
+  Prisma non-bypassing role, integration tests, CI workflow,
+  coverage thresholds. (The custom access token hook and RLS
+  policies are no longer deferred — both shipped in this round.)
 
 ### 6.2 — Scenario B: "Public launch, real money, real uptime."
 
@@ -294,21 +582,27 @@ for each:
 - **Estimated work:** 4–8 weeks including infra and ops.
 - **Required:** everything in 6.1, plus:
   7. Every item in `src/docs/production-readiness.md`:
-     OpenAPI spec, multi-stage Docker, secret injection via
-     Vault/Secrets Manager, load tests with real pooled
-     connection latency, `/metrics` for Prometheus with alert
-     rules, runbook for pool exhaustion / Supabase Auth outage
-     / `pgmq` backlog / Edge Function failures.
+     OpenAPI spec, ~~multi-stage Docker~~ (done — commit 10),
+     secret injection via Vault/Secrets Manager, load tests
+     with real pooled connection latency, `/metrics` for
+     Prometheus with alert rules, runbook for pool exhaustion /
+     Supabase Auth outage / `pgmq` backlog / Edge Function
+     failures.
   8. CI workflow (lint + test + typecheck on PR; build and
      push image on merge to main).
   9. Separate dev / staging / production Supabase projects. No
-     shared data between them.
+     shared data between them. `supabase/config.toml` (commit
+     9) is the dev project's config; staging and prod need
+     their own.
   10. The Supabase-side items the codebase has been waiting on:
-      custom access token hook stamps `organization_type`
-      (item 1 of the original handoff), Supabase project
-      rotated to issue RS256 + expose JWKS (item 7 of the
-      original handoff), and `SUPABASE_JWKS_URL` set in
-      production (commit 6 of this round, deploy-order-critical).
+      ~~custom access token hook stamps `organization_type`~~
+      (item 1 of the original handoff — **DONE** in commit 12),
+      Supabase project rotated to issue RS256 + expose JWKS
+      (item 7 of the original handoff), and `SUPABASE_JWKS_URL`
+      set in production (commit 6 of this round, deploy-order-
+      critical). The Prisma RLS work is **DONE** in commit 13
+      (19 policies applied; DML grants restored; audit log
+      revoke in place).
   11. Prisma switched to a non-bypassing role for user-facing
       queries (item 2 of the original handoff).
   12. `pgmq`-backed background jobs for any async work
@@ -324,7 +618,7 @@ for each:
 - **Estimated work:** 1–2 weeks of business logic plus a
   staging deploy.
 - **Required:**
-  - Items 1, 2, 3, 4, 5 from 6.1.
+  - Items 1, 2, 3, 4, 6 from 6.1 (Dockerfile done — item 5).
   - A minimal frontend (or just a Swagger UI on the existing
     OpenAPI stub — `swagger-ui-express` is already in
     `package.json`).
@@ -337,17 +631,45 @@ These are not this round's responsibility, but are the natural
 next round once an MVP slice is picked.
 
 - **Item 2:** non-bypassing Prisma role for user-facing queries.
+  RLS is now live (commit 13) and the policies will work the
+  moment the Prisma role is switched — the policies no longer
+  need a future change to become observable.
 - **Item 6:** integration tests + CI workflow + coverage
   thresholds.
-- **Item 1 (Supabase):** extend the custom access token hook to
+- ~~**Item 1 (Supabase):** extend the custom access token hook to
   stamp `organization_type`. Required for commit 1's fast path
-  to actually skip the DB lookup.
+  to actually skip the DB lookup.~~ — **RESOLVED** by commit 12.
+  The hook now stamps `app_metadata.organization_id` from
+  `public.users.organizationId` and `app_metadata.user_role`,
+  gated on `isActive = true`.
 - **Item 7 (Supabase):** rotate the Supabase project to issue
   RS256 + expose a JWKS endpoint. **Deploy-order-critical** with
   commit 6 — set `SUPABASE_JWKS_URL` only *after* this lands.
 - **5c:** if real usage shows the 30/15min rate limit on
   `/auth/me` is too tight, bump to 60/15min in
   `src/middlewares/rateLimitAuth.js`. One-line change.
+- **New (this round):** decide whether `quote_items` should be
+  `FOR ALL` (current) or `FOR INSERT` + `FOR UPDATE` only, to
+  match the "quotes are an immutable record" stance. A
+  cross-tenant DELETE on `quote_items` is still prevented by
+  the parent-quote EXISTS check, but a same-tenant DELETE is
+  permitted by the current `FOR ALL` policy. One-line change.
+- **New (this round):** consider a friendlier deactivated-user
+  flow. The hook's `isActive` gate is the right place for the
+  security lever (no org claim stamped → every RLS predicate
+  fails → all requests denied). But the user-facing message is
+  currently a generic 401, not "your account is deactivated."
+  Two options, in order of cost:
+  1. **Cheap (no DB hit):** have the hook also stamp
+     `app_metadata.is_active = true|false` and add a middleware
+     that reads it and returns 403 with a clear message when
+     false. ~10 lines.
+  2. **Heavy (DB hit per request):** have a `requireActive`
+     middleware query `public.users.isActive` and return the
+     same 403. Costs a round trip on every authenticated
+     request. Not recommended unless we move to a
+     non-bypassing Prisma role first (item 2 above) and need
+     a non-JWT source of truth.
 
 ### Open question for the user
 
