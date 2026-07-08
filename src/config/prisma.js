@@ -16,7 +16,7 @@ export const prisma = new PrismaClient({ adapter });
 
 export async function connectDb() {
   await prisma.$connect();
-  logger.info("Prisma connected to Postgres");
+  logger.info("Prisma connected to Postgres (pooled)");
 }
 
 export async function disconnectDb() {

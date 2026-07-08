@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { healthRouter } from "./health.route.js";
 import { authRouter } from "./auth.route.js";
+import { requireAuth, requireRole } from "../middlewares/auth.js";
+import { organizationsRouter } from "../modules/organizations/route.js";
 
 export const router = Router();
 
@@ -14,7 +16,18 @@ router.use("/health", healthRouter);
 // same path in v1, v2, etc.
 router.use("/auth", authRouter);
 
-// Future business routes will mount here, versioned:
-// router.use('/api/v1/organizations', organizationsRouter);
-// router.use('/api/v1/products', productsRouter);
-// router.use('/api/v1/quotes', quotesRouter);
+// Business routes, versioned. Each module owns its full surface
+// (route + service + validation); the mount site is the only place
+// that knows about the global middleware chain (auth + role gate).
+//
+// Organizations: PLATFORM_ADMIN-only. The role gate lives at the
+// mount site, not inside the module, so every route in the module
+// inherits it without each handler re-checking. (Per-route gates
+// like `requireOrgType` are still composed per-handler when the
+// module's surface mixes roles.)
+router.use(
+  "/api/v1/organizations",
+  requireAuth,
+  requireRole("PLATFORM_ADMIN"),
+  organizationsRouter,
+);

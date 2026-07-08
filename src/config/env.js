@@ -18,6 +18,12 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8080),
 
   DATABASE_URL: z.string().url(),
+  // Direct (non-pooled) Postgres connection. Required for
+  // Prisma's interactive transactions — the pooled DATABASE_URL
+  // above goes through PgBouncer in transaction mode, which
+  // cannot hold a multi-statement transaction. Migrations also
+  // need this URL (see prisma.config.ts).
+  DIRECT_URL: z.string().url(),
 
   SUPABASE_URL: z.string().url(),
   SUPABASE_SECRET_KEY: z.string().min(1),
