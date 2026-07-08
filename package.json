@@ -48,6 +48,7 @@
     "@scarf/scarf@1.4.0": true
   },
   "devDependencies": {
+    "supabase": "^2.109.1",
     "vitest": "^4.1.10"
   }
 }
