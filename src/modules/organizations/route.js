@@ -1,47 +1,42 @@
 import { Router } from "express";
 
-import { directPrisma } from "../../config/prisma.js";
-import { CreateOrganizationSchema } from "./validation.js";
-import { createOrganization } from "./service.js";
+import { prisma, directPrisma } from "../../config/prisma.js";
+import {
+  CreateOrganizationSchema,
+  UpdateOrganizationSchema,
+  OrganizationIdParamSchema,
+} from "./validation.js";
+import {
+  createOrganization,
+  getOrganizationById,
+  updateOrganization,
+} from "./service.js";
+import { requireRole } from "../../middlewares/auth.js";
+import { AppError } from "../../utils/AppError.js";
 
 // =====================================================================
 // Organizations route — HTTP wiring for /api/v1/organizations
 // =====================================================================
 //
 // This router is mounted under `/api/v1/organizations` from
-// src/routes/index.js. The route handler is intentionally thin:
-//   1. Validate the body with the zod schema. A failure surfaces
-//      as a 400 via the global errorHandler (which classifies
-//      ZodError and includes a sanitized `fieldErrors` map).
-//   2. Call the service. The service does the real work — DB
-//      writes, audit log — and throws AppError for known business
-//      failures (409 on duplicate email).
-//   3. Return 201 with the created resource.
+// src/routes/index.js.
 //
-// The service is responsible for the audit log row. The route does
-// not write to the audit log itself; the audit contract is owned
-// by the service so any other entrypoint (a future CLI importer,
-// an admin script) produces the same audit shape.
+// Role gates:
+//   - POST /: PLATFORM_ADMIN only (registers a new tenant)
+//   - GET /:id: Caller can read own org (scoped by req.user.organizationId);
+//               PLATFORM_ADMIN can read any org. Cross-tenant reads return 404.
+//   - PATCH /:id: ORG_ADMIN can update own org; PLATFORM_ADMIN can update any org.
+//                 Cross-tenant updates return 404.
 
 export const organizationsRouter = Router();
 
 /**
  * POST /api/v1/organizations
  *
- * Body: CreateOrganizationSchema (validated below).
- * Auth: PLATFORM_ADMIN only — gated at the mount site, not here.
- *       See src/routes/index.js where this router is mounted with
- *       the `requireRole("PLATFORM_ADMIN")` middleware.
- *
- * Responses:
- *   201 — { success: true, data: { organization, user }, meta: { correlationId } }
- *   400 — Invalid request payload (zod validation)
- *   401 — Unauthenticated (requireAuth)
- *   403 — Wrong role (requireRole)
- *   409 — Duplicate email (P2002 mapped to AppError(409))
- *   500 — Anything else (Prisma, network)
+ * Body: CreateOrganizationSchema
+ * Auth: PLATFORM_ADMIN only
  */
-organizationsRouter.post("/", async (req, res, next) => {
+organizationsRouter.post("/", requireRole("PLATFORM_ADMIN"), async (req, res, next) => {
   try {
     const input = CreateOrganizationSchema.parse(req.body);
 
@@ -50,19 +45,9 @@ organizationsRouter.post("/", async (req, res, next) => {
       // on interactive $transaction without PgBouncer transaction-mode timeouts.
       directPrisma,
       input,
-      // The actor's id isn't currently carried in the JWT (only
-      // `sub` = Supabase auth user id is). When a follow-up
-      // migration adds `app_metadata.user_id` (the public.users.id
-      // we have here), this is where it gets wired in. For now,
-      // we pass the actor's role and JWT subject so the audit log
-      // has something to record.
       {
         role: req.user?.role ?? "PLATFORM_ADMIN",
         id: null,
-        // The actor's tenant scope — used to set the audit log's
-        // `organizationId` (which RLS scopes to the actor's
-        // `current_org_id()`). A PLATFORM_ADMIN's JWT carries
-        // their own platform-admin org id here.
         organizationId: req.user?.organizationId ?? null,
       },
     );
@@ -80,3 +65,85 @@ organizationsRouter.post("/", async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * GET /api/v1/organizations/:id
+ *
+ * Reads an organization by ID.
+ * Multi-tenant guard: Non-platform admins can ONLY access their own organization.
+ * Cross-tenant accesses fail with 404 to avoid ID enumeration.
+ */
+organizationsRouter.get("/:id", async (req, res, next) => {
+  try {
+    const { id } = OrganizationIdParamSchema.parse(req.params);
+
+    // Multi-tenant boundary: verify caller has authority to read this tenant
+    const isPlatformAdmin = req.user?.role === "PLATFORM_ADMIN";
+    const isOwnOrg = req.user?.organizationId === id;
+
+    if (!isPlatformAdmin && !isOwnOrg) {
+      throw new AppError(404, "Organization not found");
+    }
+
+    const organization = await getOrganizationById(prisma, id, {
+      role: req.user?.role ?? "ORG_STAFF",
+      id: null,
+      organizationId: req.user?.organizationId ?? null,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: { organization },
+      organization, // backward-compatible alias
+      meta: {
+        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/organizations/:id
+ *
+ * Updates an organization profile.
+ * Auth: ORG_ADMIN or PLATFORM_ADMIN.
+ * Multi-tenant guard: ORG_ADMIN can only update their own organization.
+ */
+organizationsRouter.patch(
+  "/:id",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  async (req, res, next) => {
+    try {
+      const { id } = OrganizationIdParamSchema.parse(req.params);
+
+      const isPlatformAdmin = req.user?.role === "PLATFORM_ADMIN";
+      const isOwnOrg = req.user?.organizationId === id;
+
+      if (!isPlatformAdmin && !isOwnOrg) {
+        throw new AppError(404, "Organization not found");
+      }
+
+      const input = UpdateOrganizationSchema.parse(req.body);
+
+      const organization = await updateOrganization(prisma, id, input, {
+        role: req.user?.role ?? "ORG_ADMIN",
+        id: null,
+        organizationId: req.user?.organizationId ?? null,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: { organization },
+        organization, // backward-compatible alias
+        meta: {
+          ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+

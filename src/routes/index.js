@@ -3,6 +3,7 @@ import { healthRouter } from "./health.route.js";
 import { authRouter } from "./auth.route.js";
 import { requireAuth, requireRole } from "../middlewares/auth.js";
 import { organizationsRouter } from "../modules/organizations/route.js";
+import { productsRouter } from "../modules/products/route.js";
 
 export const router = Router();
 
@@ -22,14 +23,20 @@ router.use("/auth", authRouter);
 // (route + service + validation); the mount site is the only place
 // that knows about the global middleware chain (auth + role gate).
 //
-// Organizations: PLATFORM_ADMIN-only. The role gate lives at the
-// mount site, not inside the module, so every route in the module
-// inherits it without each handler re-checking. (Per-route gates
-// like `requireOrgType` are still composed per-handler when the
-// module's surface mixes roles.)
+// Organizations: All routes require authentication. Role-based gates
+// (POST requires PLATFORM_ADMIN, PATCH requires ORG_ADMIN or PLATFORM_ADMIN,
+// GET requires tenant scope or PLATFORM_ADMIN) are enforced per route inside the module.
 router.use(
   "/api/v1/organizations",
   requireAuth,
-  requireRole("PLATFORM_ADMIN"),
   organizationsRouter,
+);
+
+// Products: Catalog management and browsing. All routes require authentication.
+// Write access (POST, PATCH, DELETE) requires VENDOR role; read access (GET)
+// is available to both hospitals and vendors for catalog browsing.
+router.use(
+  "/api/v1/products",
+  requireAuth,
+  productsRouter,
 );

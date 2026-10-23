@@ -151,3 +151,113 @@ export async function createOrganization(db, input, actor) {
   }
   return await executeWrites(db);
 }
+
+/**
+ * Retrieve an organization by id and record an audit log entry.
+ *
+ * @param {import("@prisma/client").PrismaClient} db
+ * @param {string} id Organization UUID
+ * @param {{ id: string|null, role: string, organizationId: string|null }} actor
+ * @returns {Promise<object>} The organization object
+ * @throws {AppError} 404 if not found
+ */
+export async function getOrganizationById(db, id, actor) {
+  const organization = await db.organization.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      status: true,
+      email: true,
+      phone: true,
+      address: true,
+      city: true,
+      state: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!organization) {
+    throw new AppError(404, "Organization not found");
+  }
+
+  // Audit log entry for tracking access to medical/surgical procurement organizations
+  await db.auditLog.create({
+    data: {
+      organizationId: actor?.organizationId ?? null,
+      userId: actor?.id ?? null,
+      action: "read",
+      entityType: "organization",
+      entityId: organization.id,
+      metadata: {
+        actorRole: actor?.role ?? "ORG_STAFF",
+      },
+    },
+    select: { id: true },
+  });
+
+  return organization;
+}
+
+/**
+ * Update an organization's profile and record an audit log entry.
+ *
+ * @param {import("@prisma/client").PrismaClient} db
+ * @param {string} id Organization UUID
+ * @param {object} input Validated UpdateOrganizationSchema data
+ * @param {{ id: string|null, role: string, organizationId: string|null }} actor
+ * @returns {Promise<object>} The updated organization object
+ * @throws {AppError} 404 if not found
+ * @throws {AppError} 409 if email conflict (P2002)
+ */
+export async function updateOrganization(db, id, input, actor) {
+  try {
+    const organization = await db.organization.update({
+      where: { id },
+      data: input,
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        email: true,
+        phone: true,
+        address: true,
+        city: true,
+        state: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await db.auditLog.create({
+      data: {
+        organizationId: actor?.organizationId ?? null,
+        userId: actor?.id ?? null,
+        action: "update",
+        entityType: "organization",
+        entityId: organization.id,
+        metadata: {
+          updatedFields: Object.keys(input),
+          actorRole: actor?.role ?? "ORG_ADMIN",
+        },
+      },
+      select: { id: true },
+    });
+
+    return organization;
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      if (err.code === "P2002") {
+        throw new AppError(409, "An organization with that email already exists");
+      }
+      if (err.code === "P2025") {
+        throw new AppError(404, "Organization not found");
+      }
+    }
+    throw err;
+  }
+}
+
