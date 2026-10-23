@@ -18,5 +18,13 @@ export const authRouter = Router();
 // every probe. The global 300/15min limit in app.js is a baseline;
 // this tighter layer is the per-route floor for auth endpoints.
 authRouter.get("/me", authRateLimit, requireAuth, (req, res) => {
-  res.json({ user: req.user });
+  res.json({
+    success: true,
+    data: { user: req.user },
+    user: req.user, // backward-compatible alias
+    meta: {
+      ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+    },
+  });
 });
+

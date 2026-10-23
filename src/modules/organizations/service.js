@@ -64,98 +64,90 @@ export async function createOrganization(db, input, actor) {
   const { randomUUID } = await import("node:crypto");
   const organizationId = randomUUID();
   const userId = randomUUID();
-  // First user for a new org is its admin. Their
-  // `supabaseUserId` is unknown at create time — the actual
-  // Supabase auth user is created in a follow-up flow
-  // (invitation / email signup) and a separate migration links
-  // the row via `supabaseUserId`. The placeholder here is
-  // deterministic from the new org id so the linking migration
-  // can find and update it.
   const placeholderSupabaseId = `pending-${organizationId}`;
 
-  // Step 1: create the organization. P2002 (unique email) is
-  // caught here and surfaces as AppError(409) — see the catch
-  // below.
-  let organization;
-  try {
-    organization = await db.organization.create({
+  // Atomic transaction worker. All three operations run within
+  // the same transaction context (tx).
+  const executeWrites = async (tx) => {
+    // Step 1: create the organization.
+    let organization;
+    try {
+      organization = await tx.organization.create({
+        data: {
+          id: organizationId,
+          name: input.name,
+          type: input.type,
+          email: input.email,
+          phone: input.phone,
+          address: input.address,
+          city: input.city,
+          state: input.state,
+        },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          email: true,
+          phone: true,
+          address: true,
+          city: true,
+          state: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === "P2002") {
+          throw new AppError(409, "An organization with that email already exists");
+        }
+      }
+      throw err;
+    }
+
+    // Step 2: create the first admin user.
+    const user = await tx.user.create({
       data: {
-        id: organizationId,
-        name: input.name,
-        type: input.type,
+        id: userId,
+        supabaseUserId: placeholderSupabaseId,
+        organizationId: organization.id,
+        fullName: input.name,
         email: input.email,
-        phone: input.phone,
-        address: input.address,
-        city: input.city,
-        state: input.state,
-        // status: PENDING_VERIFICATION is the Prisma default. We
-        // rely on it here so a future schema change to the default
-        // only has to touch one place.
+        role: "ORG_ADMIN",
+        isActive: true,
       },
       select: {
         id: true,
-        name: true,
-        type: true,
+        organizationId: true,
+        role: true,
         email: true,
-        phone: true,
-        address: true,
-        city: true,
-        state: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
       },
     });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      if (err.code === "P2002") {
-        throw new AppError(409, "An organization with that email already exists");
-      }
-    }
-    throw err;
-  }
 
-  // Step 2: create the first admin user. FK is to the org we
-  // just created. On failure here, the org row is orphaned —
-  // see the module header for the cost analysis.
-  const user = await db.user.create({
-    data: {
-      id: userId,
-      supabaseUserId: placeholderSupabaseId,
-      organizationId: organization.id,
-      fullName: input.name, // placeholder; replaced on first login
-      email: input.email,
-      role: "ORG_ADMIN",
-      isActive: true,
-    },
-    select: {
-      id: true,
-      organizationId: true,
-      role: true,
-      email: true,
-    },
-  });
-
-  // Step 3: write the audit log row. The audit's
-  // `organizationId` is the *actor's* tenant context (RLS
-  // enforces this with `WITH CHECK (organizationId =
-  // current_org_id())` — handoff §4.13). The new org's id lives
-  // in `entityId` and `metadata.createdOrgId` for traceability.
-  await db.auditLog.create({
-    data: {
-      organizationId: actor?.organizationId ?? null,
-      userId: actor?.id ?? null,
-      action: "create",
-      entityType: "organization",
-      entityId: organization.id,
-      metadata: {
-        createdOrgId: organization.id,
-        createdOrgType: input.type,
-        actorRole: actor?.role ?? "PLATFORM_ADMIN",
+    // Step 3: write the audit log row.
+    await tx.auditLog.create({
+      data: {
+        organizationId: actor?.organizationId ?? null,
+        userId: actor?.id ?? null,
+        action: "create",
+        entityType: "organization",
+        entityId: organization.id,
+        metadata: {
+          createdOrgId: organization.id,
+          createdOrgType: input.type,
+          actorRole: actor?.role ?? "PLATFORM_ADMIN",
+        },
       },
-    },
-    select: { id: true },
-  });
+      select: { id: true },
+    });
 
-  return { organization, user };
+    return { organization, user };
+  };
+
+  // Run atomically in a transaction when the client supports it
+  if (typeof db.$transaction === "function") {
+    return await db.$transaction(executeWrites);
+  }
+  return await executeWrites(db);
 }

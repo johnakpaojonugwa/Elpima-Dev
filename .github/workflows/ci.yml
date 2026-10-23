@@ -1,0 +1,75 @@
+name: CI / Quality Gates & Container Verification
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Lint, Schema & Test Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Prisma Schema
+        run: npx prisma validate
+
+      - name: Run Unit & Routing Tests
+        run: npm test
+        env:
+          INTEGRATION_TESTS: skip
+          SUPABASE_JWT_SECRET: "ci-test-jwt-secret-not-for-production"
+
+  docker:
+    name: Build & Smoke Test Production Container
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build production Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: elpima-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify Container Sanity
+        run: |
+          docker run --rm -d --name smoke-test \
+            -p 8080:8080 \
+            -e NODE_ENV=production \
+            -e PORT=8080 \
+            -e DATABASE_URL="postgresql://user:pass@localhost:5432/db" \
+            -e DIRECT_URL="postgresql://user:pass@localhost:5432/db" \
+            -e SUPABASE_URL="https://example.supabase.co" \
+            -e SUPABASE_SECRET_KEY="placeholder-secret" \
+            -e SUPABASE_JWT_SECRET="placeholder-jwt-secret" \
+            elpima-api:ci
+
+          sleep 3
+
+          # Verify shallow liveness responds with 200 without DB dependency
+          curl --fail --retry 3 --retry-delay 2 http://localhost:8080/healthz/live || exit 1
+
+          docker stop smoke-test

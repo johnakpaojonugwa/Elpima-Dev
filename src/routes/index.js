@@ -9,7 +9,9 @@ export const router = Router();
 // Unversioned and outside /api on purpose — uptime monitors, load
 // balancers, and container orchestrators expect a stable, predictable
 // health path that won't shift when the API version bumps.
+// Mounted under both /health and /healthz for standard cloud convention.
 router.use("/health", healthRouter);
+router.use("/healthz", healthRouter);
 
 // Auth plumbing (login, /me, future refresh). Unversioned on purpose:
 // the auth surface is small and stable, and the frontend needs the

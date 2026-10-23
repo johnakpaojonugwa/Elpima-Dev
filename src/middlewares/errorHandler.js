@@ -117,7 +117,11 @@ function classifyError(err) {
 
 export function notFoundHandler(req, res) {
   res.status(404).json({
-    error: { message: `Route not found: ${req.method} ${req.originalUrl}` },
+    success: false,
+    error: {
+      message: `Route not found: ${req.method} ${req.originalUrl}`,
+      correlationId: req.correlationId,
+    },
   });
 }
 
@@ -149,14 +153,16 @@ export function errorHandler(err, req, res, _next) {
     ...(classified.details ? { details: classified.details } : {}),
   });
 
-  // Client response: sanitized. In dev, attach a `devMessage` with
+  // Client response: sanitized responsive envelope. In dev, attach a `devMessage` with
   // the real message behind the same NODE_ENV gate we already use
   // for stacks, so local debugging still works without ever shipping
   // internals to prod.
   const body = {
+    success: false,
     error: {
       message: classified.clientMessage,
       correlationId,
+      kind: classified.kind,
       ...(classified.details ? { details: classified.details } : {}),
     },
   };

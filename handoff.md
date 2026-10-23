@@ -5,21 +5,29 @@
 Determine whether the codebase is ready to ship as an MVP and, if not,
 identify the smallest set of work that gets it there.
 
-The handoff's conclusion: **closer than last round, but not yet.** The
-expensive parts (auth, observability, containerization, multi-tenant
-RLS) are done. The domain logic, staging environment, and a couple of
-remaining Supabase / Prisma-side items are still the gap. Specific
-guidance for three plausible MVP scenarios (manual-first-customer,
-public launch, pilot) is in section 6.
+The handoff's conclusion: **executing Scenario B (public launch).**
+The user picked Scenario B from section 6 of the prior handoff and
+asked for the full 36-task plan to be built, "in batches, starting
+from the first." A plan was committed at `a5bdcf8` (`tasks/plan.md`
++ `tasks/todo.md`). The Domain track is now in flight: T1.1
+(organizations validation) and T1.2 (POST /api/v1/organizations)
+are landed. T1.3 (GET by id) is next. The Ops track (T0.1–T0.4) is
+still untouched and is a parallel concern. The auth,
+observability, containerization, and multi-tenant RLS work that was
+the bottleneck is unchanged from the prior round and remains done.
+Specific guidance for the three scenarios, with Scenario B's
+expansion now anchored in the live plan, is in section 6.
 
 ## 2. Current state
 
-**Master HEAD:** `f4d55bd`. Working tree contains two new uncommitted
-migrations (`20260708120000_fix_custom_access_token_hook` and
-`20260708130000_apply_rls_policies_and_grants`) and a modified
-`handoff.md` (this file's current revision). Both new migrations
-have been applied to the live Supabase project via the MCP, and the
-end-to-end multi-tenant security story is verified by smoke tests.
+**Master HEAD:** `abfef78`. Working tree clean. The Scenario B plan
+(`tasks/plan.md`, `tasks/todo.md`) is committed at `a5bdcf8`. The
+Domain track's first two slices — T1.1 (organizations validation
+schemas) and T1.2 (POST /api/v1/organizations) — are landed and
+covered by 60/60 passing tests (34 pre-existing unit + 21 orgs
+validation unit + 5 organizations POST integration). Integration
+tests are skipped when `INTEGRATION_TESTS=skip`; the default
+`npm test` exercises them against the live Supabase project.
 
 | # | Commit | Status |
 |---|---|---|
@@ -33,52 +41,92 @@ end-to-end multi-tenant security story is verified by smoke tests.
 | 8 | `chore(deps): add supabase CLI to devDependencies` | ✅ `770bf46` |
 | 9 | `chore(supabase): add local stack config` | ✅ `7470cd3` |
 | 10 | `chore(docker): add production Dockerfile and .dockerignore` | ✅ `a451d67` |
-| 11 | `docs: refresh MVP handoff assessment` | ✅ `f4d55bd` (this file's prior revision) |
-| 12 | `fix(db): repair public.custom_access_token_hook` | ✅ uncommitted, applied to live DB |
-| 13 | `feat(db): apply RLS policies + DML grants` | ✅ uncommitted, applied to live DB |
+| 11 | `fix(db): repair public.custom_access_token_hook` | ✅ `14cb50d` (was uncommitted; committed via the "refresh handoff" series) |
+| 12 | `feat(db): apply RLS policies + DML grants` | ✅ `11a6158` (was uncommitted; committed via the "refresh handoff" series) |
+| 13 | `docs: refresh handoff to include hook fix and RLS patch` | ✅ `28a0a8b` |
+| 14 | `docs(planning): add Scenario B implementation plan and todo` | ✅ `a5bdcf8` |
+| 15 | `feat(orgs): add organizations validation schemas` (T1.1) | ✅ `629a9a0` |
+| 16 | `feat(orgs): POST /api/v1/organizations endpoint` (T1.2) | ✅ `abfef78` |
 
-**Test suite:** 34/34 unit tests pass (auth, correlation IDs, rate
-limit). No integration tests, no coverage thresholds, no CI
-workflow.
+**Test suite:** 60/60 pass. Composition: 19 auth (HS256 round-trip,
+audience, JWKS RS256, claim short-circuit, algorithm pinning, error
+translation), 6 correlationId (mint/echo, log-injection guard,
+oversize, boundary), 2 rateLimitAuth (30× 200 + 31st 429 with
+Retry-After), 21 organizations validation (Create / Update /
+IdParam schemas — happy path, trimming, strict, length caps,
+type/status immutability on update, UUID format), and 5
+organizations POST integration (201 happy path with audit log
+assertion, 401 unauthenticated, 403 wrong role, 400 invalid
+payload, 409 duplicate email). No coverage thresholds, no CI
+workflow yet — both belong to T0.1 in the Ops track.
 
-**What the codebase actually is:** an auth + plumbing skeleton with
-containerization, a working local Supabase stack, and a fully
-multi-tenant RLS layer in the live database.
+**What the codebase actually is:** an auth + plumbing skeleton
+with containerization, a working local Supabase stack, a fully
+multi-tenant RLS layer in the live database, and the first vertical
+slice of domain logic (organizations) wired end-to-end.
 
 - `src/routes/` ships two routers: `/health` and `/auth` (which only
-  exposes `/me`).
-- `src/routes/index.js` has commented-out placeholders for
-  `organizations`, `products`, `quotes` — none of them exist.
-- `src/models/` is **empty**.
+  exposes `/me`), and now also mounts the organizations router
+  under `/api/v1/organizations` with `requireAuth` +
+  `requireRole("PLATFORM_ADMIN")` at the mount site.
+- `src/modules/organizations/` is the new domain module: a thin
+  Express router, a service that does the writes + audit log, and
+  a validation module with three zod schemas. See section 4.15 and
+  4.16 for the design notes.
+- `src/models/` is **empty**. The first data-access layer lives in
+  `src/modules/organizations/service.js` (Prisma calls are inlined
+  rather than wrapped in a `models/organization.js` — see the open
+  question in section 6 about when to extract that).
 - A production `Dockerfile` (multi-stage, non-root, with tini + health
-  check) and `.dockerignore` now exist (commit 10). There is still no
+  check) and `.dockerignore` exist (commit 10). There is still no
   `docker-compose.yml`, no CI workflow, no staging environment.
-- A local Supabase stack config (`supabase/config.toml`) now exists
+- A local Supabase stack config (`supabase/config.toml`) exists
   (commit 9), wired with `env(...)` placeholders for all secrets and a
   `supabase/.gitignore` excluding CLI runtime state.
 - The Supabase CLI is installed as a devDependency (commit 8), so
   `npm run` + `supabase start` works in any clone.
-- The live Supabase project now has:
+- The live Supabase project has:
   - **19 RLS policies** on the 9 tenant-scoped public tables
-    (commit 13). Every authenticated read/write is scoped by
+    (commit 12). Every authenticated read/write is scoped by
     `current_org_id()`, which reads
     `app_metadata.organization_id` from the JWT.
-  - **`public.current_org_id()` helper** (commit 13): `SECURITY
+  - **`public.current_org_id()` helper** (commit 12): `SECURITY
     INVOKER`, `STABLE`, locked `search_path`.
   - **Default DML grants** to `authenticated` on all 9 tenant tables
-    (commit 13). Without these, RLS policies are unreachable.
-  - **`audit_logs` UPDATE/DELETE revoked** (commit 13). Second line of
+    (commit 12). Without these, RLS policies are unreachable.
+  - **`audit_logs` UPDATE/DELETE revoked** (commit 12). Second line of
     defense; `pg_policy` has no UPDATE/DELETE policy for audit_logs
     either.
-  - **Fixed `custom_access_token_hook`** (commit 12). Was referencing
+  - **Fixed `custom_access_token_hook`** (commit 11). Was referencing
     a non-existent `public.user_organizations` table; now correctly
     reads from `public.users.supabaseUserId`, gates on `isActive =
     true`, and stamps `app_metadata.organization_id` and
     `app_metadata.user_role`.
+  - **Seeded `Elpima Platform Admin` org** with id
+    `00000000-0000-0000-0000-platformadmin0` (created in the
+    previous session). Required for the audit log's FK to
+    satisfy the policy: a PLATFORM_ADMIN's audit row has
+    `organizationId` = this seeded id, and the FK to
+    `organizations.id` needs the row to exist. Without it, every
+    PLATFORM_ADMIN-issued audit write would 23503.
 - `src/docs/production-readiness.md` enumerates a 7-item pre-deploy
   checklist. **One item is satisfied** (containerization, item 5 in
   section 6.1) — six remain. The RLS work unblocks item 11 (Prisma
   non-bypassing role) — see section 6.
+
+**What's working well:** the auth middleware, the correlation-ID
+plumbing, the structured error envelope, the env validation, the
+test patterns for env-conditional modules, the production Dockerfile,
+the local Supabase stack, the fixed JWT custom hook, the full
+multi-tenant RLS layer, and now the first vertical slice of domain
+logic (organizations) wired through validation → route → service →
+Prisma → audit log. The TDD loop on T1.1–T1.2 surfaced two
+architectural decisions that are documented in the commits and
+inline comments: (1) `prisma.config.ts` needs `DIRECT_URL` for
+migrations because the pooled `DATABASE_URL` cannot hold an
+interactive transaction; (2) the organizations service uses
+sequential writes (not `$transaction`) for the same reason —
+the full analysis is in `src/modules/organizations/service.js`.
 
 **What's working well:** the auth middleware, the correlation-ID
 plumbing, the structured error envelope, the env validation, the
@@ -89,8 +137,8 @@ retrofit, and they're done.
 
 ## 3. Active files
 
-Files touched across the eleven committed changes plus the two new
-uncommitted migrations. Anything outside this list is unmodified.
+Files touched across the sixteen committed changes. Anything outside
+this list is unmodified.
 
 **Source**
 - `src/middlewares/auth.js` — `requireAuth`, `requireRole`,
@@ -104,16 +152,43 @@ uncommitted migrations. Anything outside this list is unmodified.
 - `src/utils/logger.js` — winston logger + morgan stream (parses
   JSON access log line). Dev `printf` now renders the access-log
   fields (commit 7).
+- `src/utils/AppError.js` — domain error with HTTP status; used by
+  the organizations service to map P2002 → 409.
 - `src/app.js` — mounts `correlationId` before morgan, custom
   `jsonAccessLog` format.
 - `src/config/env.js` — zod-validated env, including
-  `SUPABASE_JWT_AUDIENCE` and `SUPABASE_JWKS_URL`. Side-effect-free
-  import; `.env` loading is the entry point's job.
+  `SUPABASE_JWT_AUDIENCE`, `SUPABASE_JWKS_URL`, and **`DIRECT_URL`**
+  (required for Prisma migrations; the pooled `DATABASE_URL`
+  remains the API connection). Side-effect-free import; `.env`
+  loading is the entry point's job.
+- `src/config/prisma.js` — single pooled `PrismaClient` (uses
+  `PrismaPg` adapter against `DATABASE_URL`).
+- `src/config/supabase.js` — Supabase client factory.
 - `src/routes/auth.route.js` — `/me` mounted with
   `authRateLimit, requireAuth`.
+- `src/routes/health.route.js` — uptime probe.
+- `src/routes/index.js` — mounts `/health`, `/auth`, and (as of
+  commit 16) `/api/v1/organizations` with
+  `requireAuth, requireRole("PLATFORM_ADMIN"), organizationsRouter`.
+  The role gate lives at the mount site, not inside the module, so
+  every route in the module inherits it without per-handler
+  re-checks.
+- `src/modules/organizations/validation.js` (T1.1) — three zod
+  schemas: `CreateOrganizationSchema`, `UpdateOrganizationSchema`,
+  `OrganizationIdParamSchema`. `.strict()` rejects unknown keys;
+  `type` and `status` are immutable on update; empty string
+  optionals normalize to `undefined`.
+- `src/modules/organizations/service.js` (T1.2) — `createOrganization`
+  does three sequential Prisma writes (org → user → audit log)
+  rather than a `$transaction`, because pgBouncer in transaction
+  mode cannot hold an interactive transaction. P2002 is mapped to
+  `AppError(409)`. Full analysis in the module header.
+- `src/modules/organizations/route.js` (T1.2) — thin POST handler:
+  parse, call service, return 201. The service owns the audit
+  contract.
 - `server.js` — entry point, loads `.env`, owns graceful shutdown.
 
-**Build / infra (new in this round)**
+**Build / infra (committed across the round)**
 - `Dockerfile` — multi-stage, `node:22-bookworm` builder, `node:22-bookworm-slim`
   production stage, runs as `node` (UID 1000), tini as PID 1,
   `HEALTHCHECK` on `/health` every 30s, `EXPOSE 3000`.
@@ -129,9 +204,14 @@ uncommitted migrations. Anything outside this list is unmodified.
   storage ports; all secrets wired as `env(...)` placeholders.
 - `supabase/.gitignore` — excludes CLI runtime state (`.branches`,
   `.temp`, `pgdelta`).
-- `package.json` — adds `supabase@^2.109.1` as a devDependency so
-  the local stack workflow is available from `npx supabase` in any
-  clone.
+- `prisma.config.ts` — Prisma 7 config; uses `DIRECT_URL` for
+  migrations (the pooled `DATABASE_URL` is for the running app).
+  Required because pgBouncer in transaction mode cannot hold an
+  interactive transaction. `env.js` now makes `DIRECT_URL`
+  mandatory.
+- `package.json` — adds `supabase@^2.109.1` as a devDependency
+  (commit 8) and `supertest@^7.2.2` as a devDependency (commit
+  16) for the organizations integration tests.
 
 **Tests**
 - `test/middlewares/auth.test.js` — 19 cases: HS256 round-trip,
@@ -141,12 +221,32 @@ uncommitted migrations. Anything outside this list is unmodified.
   mint/echo, log-injection guard, oversize, boundary.
 - `test/middlewares/rateLimitAuth.test.js` — 2 cases: 30× 200, 31st
   is 429 with `Retry-After`.
+- `test/modules/organizations/validation.test.js` (T1.1) — 21 cases
+  covering the three zod schemas: happy path with default status,
+  trim, partial update, type/status immutability on update, UUID
+  format, strict-mode rejection of extra keys, length caps.
+- `test/integration/organizations.post.test.js` (T1.2) — 5 cases
+  that boot the real Express app and exercise the route against
+  the live Supabase project: 201 happy path with full response
+  shape and audit-log assertion, 401 unauthenticated, 403 ORG_ADMIN
+  caller, 400 invalid payload, 409 duplicate email. Skipped when
+  `INTEGRATION_TESTS=skip`; default `npm test` runs them. 60s
+  per-test ceiling reflects live-DB latency, not a code smell.
 - `test/fixtures/rsaKeypair.js` — node:crypto keypair + RS256 signer.
 - `test/setup.js` — seeds `SUPABASE_JWT_SECRET`, strips
   `SUPABASE_JWT_AUDIENCE` and `SUPABASE_JWKS_URL`, Windows-safe
   `.env` path.
 
 **Docs**
+- `tasks/plan.md` (commit 14) — Scenario B implementation plan:
+  36 tasks across Domain (Phases 1–4) and Ops (Phases 0, 5)
+  tracks, converging at a Phase 6 launch gate. Two-track
+  parallelism is encoded in the task's `addBlocks` /
+  `addBlockedBy` graph; only T1.1 → T1.2 → T1.3 → T1.4 → T1.5 is
+  a hard dependency chain in Phase 1.
+- `tasks/todo.md` (commit 14) — per-task cards: acceptance
+  criteria, verification, dependencies, files-likely-touched,
+  estimated scope. 756 lines.
 - `src/docs/production-readiness.md` — official pre-deploy checklist.
   Reference only; items are mostly unsatisfied.
 - `src/docs/compliance-standards.md` — PHI/PII rules referenced by
@@ -171,9 +271,9 @@ uncommitted migrations. Anything outside this list is unmodified.
 
 ## 4. Changes made
 
-This section summarizes the eleven committed changes plus the two new
-uncommitted migrations. The commit messages themselves are the source
-of truth for the *why*; this is a guide to the *what*.
+This section summarizes the sixteen committed changes. The commit
+messages themselves are the source of truth for the *why*; this is
+a guide to the *what*.
 
 ### 4.1 — `feat(auth): short-circuit requireOrgType when JWT carries organization_type` (`23f271e`)
 
@@ -309,7 +409,7 @@ Two follow-ups from the code review of 4.1–4.6:
 - The prior version of this file. Wrote the seven-commit assessment
   that section 4 above has been extended from.
 
-### 4.12 — `fix(db): repair public.custom_access_token_hook` (`20260708120000_fix_custom_access_token_hook`, uncommitted)
+### 4.12 — `fix(db): repair public.custom_access_token_hook` (`14cb50d`, migration `20260708120000_fix_custom_access_token_hook`)
 
 - The previous version of the hook (deployed via the Supabase
   dashboard template) read from `public.user_organizations`, a table
@@ -358,7 +458,7 @@ Two follow-ups from the code review of 4.1–4.6:
     - Unknown auth user → no claims stamped (fail-closed).
   - All five tenant tables still at 0 rows after the smoke tests.
 
-### 4.13 — `feat(db): apply RLS policies + DML grants` (`20260708130000_apply_rls_policies_and_grants`, uncommitted)
+### 4.13 — `feat(db): apply RLS policies + DML grants` (`11a6158`, migration `20260708130000_apply_rls_policies_and_grants`)
 
 - The committed migration `20260706120000_rls_policies` described
   the intended RLS layout but was never actually applied to the
@@ -419,12 +519,161 @@ Two follow-ups from the code review of 4.1–4.6:
 
 **Net effect:** a complete multi-tenant security story end-to-end.
 A signed-in user with a valid `users` row gets a JWT with
-`app_metadata.organization_id` set (commit 12). Every table with
+`app_metadata.organization_id` set (commit 11). Every table with
 tenant data has at least one RLS policy that scopes reads/writes to
-that org (commit 13). Cross-tenant writes raise PostgreSQL
+that org (commit 12). Cross-tenant writes raise PostgreSQL
 exceptions, not silent denials. The audit log is doubly protected.
 A user with no org claim (hook misfire, signup race) sees the
 public catalog but zero tenant data.
+
+### 4.14 — `docs(planning): add Scenario B implementation plan and todo` (`a5bdcf8`)
+
+The prior handoff ended with an open question — "which scenario
+(A, B, or C) are you aiming for?" The user picked **Scenario B
+(public launch)** and asked for the full plan to be built, "in
+batches, starting from the first." This commit materializes the
+plan as two files the build skill consumes:
+
+- `tasks/plan.md` (270 lines): the architecture decisions, the
+  phase structure, the checkpoint definition, the risks, the
+  open questions. Two parallel tracks:
+  - **Domain** (Phases 1–4): organizations → products → license
+    verification (PHI) → quotes/orders.
+  - **Ops** (Phases 0, 5): CI → env contract → env separation →
+    staging → secrets → observability → runbook.
+  The two tracks converge at Phase 6 (launch gate).
+- `tasks/todo.md` (756 lines): one card per task, with
+  acceptance criteria, verification commands, dependency edges,
+  files-likely-touched, and estimated scope. The dependency
+  graph is encoded in the TaskList tool's `addBlocks` /
+  `addBlockedBy` fields, not just prose.
+
+The plan is explicit about one design choice: T1.2's
+`createOrganization` was originally specified to use a
+`$transaction`. The implementation in 4.16 departs from that
+because pgBouncer cannot hold an interactive transaction. The
+plan's open questions are tracked separately in section 6 of
+this handoff; T5.4 (non-pgBouncer pool) is the right time to
+wrap the organizations service back in a real transaction.
+
+### 4.15 — `feat(orgs): add organizations validation schemas` (`629a9a0`, T1.1)
+
+The first domain-track task. Three zod schemas in
+`src/modules/organizations/validation.js`, each with a
+co-located vitest file:
+
+- `CreateOrganizationSchema`: required `name` (≤ 200), `type`
+  (`HOSPITAL | VENDOR`), `email` (RFC-compliant, ≤ 254);
+  optional `phone`, `address`, `city`, `state`. `.strict()` to
+  reject unknown keys (e.g. an attempt to inject `id` or
+  `organizationId`). `.transform()` to force `status =
+  PENDING_VERIFICATION` regardless of caller input — the
+  service does not trust the client to set a status. Empty
+  string optionals normalize to `undefined` so the DB's NULL
+  semantics stay predictable.
+- `UpdateOrganizationSchema`: every field optional, accepts
+  an empty object (no-op is valid). Deliberately excludes
+  `type` and `status` — `type` is immutable for a tenant
+  (a hospital does not become a vendor), and status
+  transitions get their own PLATFORM_ADMIN-only route so
+  the audit log row carries the actor's intent. `.strict()`
+  on the same reasoning.
+- `OrganizationIdParamSchema`: UUID-only path parameter.
+  The server never accepts a tenant's slug or a numeric id.
+
+Field-level max lengths (kept in one place so the column types
+in `schema.prisma` can be cross-checked): name 200, email 254
+(RFC 5321), phone 40, address 500, city 100, state 100. All
+strings are trimmed on parse so a frontend that sends
+`"  Hospital  "` doesn't end up with leading whitespace in the
+unique-email index.
+
+21 unit tests, all green. The route handler in 4.16 calls
+`CreateOrganizationSchema.parse(req.body)` and lets the global
+`errorHandler` classify the resulting `ZodError` as a 400 with
+a sanitized `fieldErrors` map.
+
+### 4.16 — `feat(orgs): POST /api/v1/organizations endpoint` (`abfef78`, T1.2)
+
+Wires the create-org path end-to-end. The route is thin (parse,
+call, respond); the service does the work. Three layers:
+
+- `src/modules/organizations/route.js`: `POST /` on
+  `organizationsRouter`. Validates the body with
+  `CreateOrganizationSchema`, calls
+  `createOrganization(prisma, input, actor)`, returns 201 with
+  `{ organization, user }`. Errors forward to the global
+  `errorHandler` via `next(err)`.
+- `src/modules/organizations/service.js`:
+  `createOrganization(db, input, actor)`. Three sequential
+  Prisma writes: `organization.create` → `user.create` →
+  `auditLog.create`. P2002 on the org's email is caught and
+  mapped to `AppError(409, "An organization with that email
+  already exists")`. Pre-generates the org id, the user id,
+  and a placeholder `supabaseUserId` (`pending-<orgId>`) so
+  the user row can be created with the right FK in a single
+  statement. The placeholder is deterministic so a future
+  linking migration can find and update it when the actual
+  Supabase auth user is created (invitation / email signup).
+- `src/routes/index.js`: mounts the router under
+  `/api/v1/organizations` with `requireAuth,
+  requireRole("PLATFORM_ADMIN")` at the mount site. The role
+  gate is not inside the module so every route in the module
+  inherits it without per-handler re-checks.
+
+**Architectural deviation from the plan:** the plan called for
+`$transaction`; the implementation is sequential. pgBouncer in
+transaction mode cannot hold an interactive transaction, and
+even the array form (`db.$transaction([...])`) requires a
+server-side BEGIN/COMMIT that times out after the first call
+in a given process. The sequential shape accepts a narrow
+atomicity loss: if the user write or audit log write fails
+after the org write succeeds, an orphaned PENDING org with
+no user is the worst-case outcome. The cost is bounded (a
+PENDING org with no users and no audit row is a no-op) and
+clean-up is straightforward. A future migration to a
+non-pgBouncer pool (T5.4) is the right time to wrap this back
+in a real transaction. Full analysis is in the service's
+module header.
+
+**Audit log semantics:** `organizationId` on the audit row is
+the *actor's* tenant context (the platform admin's org), per
+the RLS policy on `audit_logs` (`WITH CHECK (organizationId =
+current_org_id())`). The new org's id lives in `entityId` and
+`metadata.createdOrgId` for traceability. This is the correct
+shape for a multi-tenant audit log: it tracks "which tenant's
+admin did what", not "which row was created". The actor's
+public.users.id is `null` for now — the JWT carries
+`sub` (the Supabase auth user id) but not the public.users.id.
+A follow-up migration adding `app_metadata.user_id` is the
+right fix; documented in the route's actor-passing comment.
+
+**Live-DB dependency:** the integration test mints a synthetic
+PLATFORM_ADMIN JWT whose `organization_id` claim matches the
+seeded `Elpima Platform Admin` org id
+(`00000000-0000-0000-0000-platformadmin0`). Without that
+seeded row, the audit log write would 23503 on its FK to
+`organizations.id`. The seeding happened in the previous
+session; the test file documents the dependency in its
+header.
+
+**Integration tests:** 5 cases, all green against the live
+Supabase project. The full Express app is booted so the
+correlationId → access log → rate limit → router → handler →
+errorHandler chain is exercised end-to-end. 60s per-test
+ceiling reflects live-DB latency (~4–5s per write) — not a
+code smell. The unit suite's 5s default is preserved for the
+non-DB tests. Cleanup deletes created orgs; `users` cascade-
+deletes via FK; `audit_logs` rows persist by design (the
+table's UPDATE/DELETE is revoked). The persisted audit rows
+are the cost of testing the audit contract against a
+non-disposable DB; T0.4 (staging environment) is the
+production fix.
+
+**Test totals after this commit:** 60/60. Composition: 26 auth
++ 6 correlationId + 2 rateLimitAuth + 21 orgs validation + 5
+orgs POST integration = 60. (The prior handoff's "34 unit"
+count understated the auth suite at 19; it has 26.)
 
 ## 5. Failed attempts
 

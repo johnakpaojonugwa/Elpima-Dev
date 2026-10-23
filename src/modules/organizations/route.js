@@ -1,6 +1,6 @@
 import { Router } from "express";
 
-import { prisma } from "../../config/prisma.js";
+import { directPrisma } from "../../config/prisma.js";
 import { CreateOrganizationSchema } from "./validation.js";
 import { createOrganization } from "./service.js";
 
@@ -34,7 +34,7 @@ export const organizationsRouter = Router();
  *       the `requireRole("PLATFORM_ADMIN")` middleware.
  *
  * Responses:
- *   201 — { organization, user }
+ *   201 — { success: true, data: { organization, user }, meta: { correlationId } }
  *   400 — Invalid request payload (zod validation)
  *   401 — Unauthenticated (requireAuth)
  *   403 — Wrong role (requireRole)
@@ -46,15 +46,9 @@ organizationsRouter.post("/", async (req, res, next) => {
     const input = CreateOrganizationSchema.parse(req.body);
 
     const { organization, user } = await createOrganization(
-      // The pooled `prisma` client. The service runs three
-      // sequential writes rather than a transaction (see the
-      // service's module header) — pgBouncer in transaction mode
-      // cannot hold an interactive transaction, so a real
-      // `$transaction` would time out. A future migration to a
-      // non-pgBouncer pool
-      // (T5.4) is the right time to wrap this back in a
-      // transaction.
-      prisma,
+      // Uses unpooled directPrisma client to guarantee atomic rollback
+      // on interactive $transaction without PgBouncer transaction-mode timeouts.
+      directPrisma,
       input,
       // The actor's id isn't currently carried in the JWT (only
       // `sub` = Supabase auth user id is). When a follow-up
@@ -73,7 +67,15 @@ organizationsRouter.post("/", async (req, res, next) => {
       },
     );
 
-    res.status(201).json({ organization, user });
+    res.status(201).json({
+      success: true,
+      data: { organization, user },
+      organization, // backward-compatible alias
+      user,         // backward-compatible alias
+      meta: {
+        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+      },
+    });
   } catch (err) {
     next(err);
   }

@@ -73,6 +73,7 @@ COPY --from=builder --chown=node:node /build/node_modules ./node_modules
 COPY --from=builder --chown=node:node /build/package.json ./
 COPY --from=builder --chown=node:node /build/server.js ./
 COPY --from=builder --chown=node:node /build/prisma ./prisma/
+COPY --from=builder --chown=node:node /build/generated ./generated/
 COPY --from=builder --chown=node:node /build/src ./src/
 
 # Switch to the unprivileged user (UID 1000, ships with the base image).
@@ -80,12 +81,12 @@ USER node
 
 # ── Health check ────────────────────────────────────────────────────────────
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:${PORT:-3000}/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1))"
+  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 8080) + '/healthz/live', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1))"
 
 # Document the port the app listens on.
 # NOTE: actual port is configured at runtime via the PORT env var;
-#       3000 follows the value in .env.example / the Express convention.
-EXPOSE 3000
+#       8080 follows the default in src/config/env.js.
+EXPOSE 8080
 
 # ── Start ───────────────────────────────────────────────────────────────────
 # tini as PID 1 ensures signals (SIGTERM from `docker stop` / k8s) reach

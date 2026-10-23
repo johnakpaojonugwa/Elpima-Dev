@@ -10,6 +10,7 @@ import { router } from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 import { morganStream } from './utils/logger.js';
 import { correlationId } from './middlewares/correlationId.js';
+import { setupSwagger } from './config/swagger.js';
 
 // Custom morgan format: returns a JSON-encoded line so the stream
 // (morganStream.write in utils/logger.js) can pull structured fields
@@ -68,6 +69,9 @@ export function createApp() {
       legacyHeaders: false,
     })
   );
+
+  // Mount OpenAPI / Swagger UI documentation at /api/v1/docs
+  setupSwagger(app);
 
   app.use(router);
 
