@@ -128,7 +128,7 @@ export async function createOrganization(db, input, actor) {
     // Step 3: write the audit log row.
     await tx.auditLog.create({
       data: {
-        organizationId: actor?.organizationId ?? null,
+        organizationId: actor?.organizationId ?? organization.id,
         userId: actor?.id ?? null,
         action: "create",
         entityType: "organization",

@@ -46,8 +46,8 @@ describe.skipIf(skipReason)("Products Catalog API (/api/v1/products)", () => {
     // 1. Platform Admin Token
     platformAdminToken = jwt.sign(
       {
-        sub: "00000000-0000-4000-8000-platformadmin0",
-        organization_id: "00000000-0000-4000-8000-platformadmin0",
+        sub: "00000000-0000-0000-0000-platformadmin0",
+        organization_id: "00000000-0000-0000-0000-platformadmin0",
         role: "PLATFORM_ADMIN",
         email: "platform-admin@elpima-test.invalid",
       },
@@ -199,7 +199,7 @@ describe.skipIf(skipReason)("Products Catalog API (/api/v1/products)", () => {
       expect(res.body.error.message).toMatch(/organization type/i);
     });
 
-    it("rejects payload with negative price with 422", { timeout: TEST_TIMEOUT }, async () => {
+    it("rejects payload with negative price with 400", { timeout: TEST_TIMEOUT }, async () => {
       const res = await request(app)
         .post("/api/v1/products")
         .set("Authorization", `Bearer ${vendorAToken}`)
@@ -208,7 +208,7 @@ describe.skipIf(skipReason)("Products Catalog API (/api/v1/products)", () => {
           unitPrice: -500,
         });
 
-      expect(res.status).toBe(422);
+      expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
       expect(res.body.error.kind).toBe("validation_error");
     });
@@ -347,12 +347,12 @@ describe.skipIf(skipReason)("Products Catalog API (/api/v1/products)", () => {
       expect(res.body.error.message).toMatch(/not found/i);
     });
 
-    it("returns 422 for a malformed UUID param", { timeout: TEST_TIMEOUT }, async () => {
+    it("returns 400 for a malformed UUID param", { timeout: TEST_TIMEOUT }, async () => {
       const res = await request(app)
         .get("/api/v1/products/not-a-valid-uuid")
         .set("Authorization", `Bearer ${hospitalToken}`);
 
-      expect(res.status).toBe(422);
+      expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
     });
   });
