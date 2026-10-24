@@ -2,6 +2,7 @@ import { Router } from "express";
 import { healthRouter } from "./health.route.js";
 import { authRouter } from "./auth.route.js";
 import { requireAuth, requireRole } from "../middlewares/auth.js";
+import { metricsRouter } from "./metrics.route.js";
 import { organizationsRouter } from "../modules/organizations/route.js";
 import { productsRouter } from "../modules/products/route.js";
 import { licensesRouter } from "../modules/licenses/route.js";
@@ -16,6 +17,9 @@ export const router = Router();
 // Mounted under both /health and /healthz for standard cloud convention.
 router.use("/health", healthRouter);
 router.use("/healthz", healthRouter);
+
+// Prometheus scraper endpoint (unversioned per standard Prometheus convention)
+router.use("/metrics", metricsRouter);
 
 // Auth plumbing (login, /me, future refresh). Unversioned on purpose:
 // the auth surface is small and stable, and the frontend needs the

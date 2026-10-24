@@ -53,6 +53,10 @@ const envSchema = z.object({
   // until rollback. See src/middlewares/auth.js for the verifier.
   SUPABASE_JWKS_URL: z.string().url().optional(),
 
+  // Optional bearer token required to scrape Prometheus /metrics.
+  // When configured, GET /metrics requires Authorization: Bearer <METRICS_TOKEN>.
+  METRICS_TOKEN: z.string().min(1).optional(),
+
   // Accepts a single origin, "*" (any origin, dev default), or a
   // comma-separated list. The browser's CORS check fails silently on
   // a single malformed origin, so parsing the list at the env boundary

@@ -6,6 +6,7 @@
 //   - T4.3b: GET /api/v1/quotes/:id (participating org 200, non-participating 404, audit log)
 //   - T4.4: PATCH /api/v1/quotes/:id (vendor send, hospital accept, automatic order creation)
 
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -60,13 +61,14 @@ describe.skipIf(skipReason)("Quotes & Procurement RFQ API (/api/v1/quotes)", () 
     );
 
     // 2. Provision Hospital Org A (Buyer)
+    const runId = randomUUID().slice(0, 8);
     const resHospA = await request(app)
       .post("/api/v1/organizations")
       .set("Authorization", `Bearer ${platformAdminToken}`)
       .send({
-        name: `Reddington Hospital Victoria Island ${Date.now()}`,
+        name: `Reddington Hospital ${runId}`,
         type: "HOSPITAL",
-        email: `hosp-a-${Date.now()}@elpima-test.invalid`,
+        email: `hosp-a-${runId}@elpima-test.invalid`,
         city: "Victoria Island, Lagos",
       });
     expect(resHospA.status).toBe(201);
@@ -78,9 +80,9 @@ describe.skipIf(skipReason)("Quotes & Procurement RFQ API (/api/v1/quotes)", () 
       .post("/api/v1/organizations")
       .set("Authorization", `Bearer ${platformAdminToken}`)
       .send({
-        name: `St. Nicholas Hospital ${Date.now()}`,
+        name: `St. Nicholas Hospital ${runId}`,
         type: "HOSPITAL",
-        email: `hosp-b-${Date.now()}@elpima-test.invalid`,
+        email: `hosp-b-${runId}@elpima-test.invalid`,
         city: "Lagos Island, Lagos",
       });
     expect(resHospB.status).toBe(201);
@@ -92,9 +94,9 @@ describe.skipIf(skipReason)("Quotes & Procurement RFQ API (/api/v1/quotes)", () 
       .post("/api/v1/organizations")
       .set("Authorization", `Bearer ${platformAdminToken}`)
       .send({
-        name: `MedEquip International West Africa ${Date.now()}`,
+        name: `MedEquip West Africa ${runId}`,
         type: "VENDOR",
-        email: `vendor-a-${Date.now()}@elpima-test.invalid`,
+        email: `vendor-a-${runId}@elpima-test.invalid`,
         city: "Ikeja, Lagos",
       });
     expect(resVendorA.status).toBe(201);
@@ -106,9 +108,9 @@ describe.skipIf(skipReason)("Quotes & Procurement RFQ API (/api/v1/quotes)", () 
       .post("/api/v1/organizations")
       .set("Authorization", `Bearer ${platformAdminToken}`)
       .send({
-        name: `Global Surgical Solutions ${Date.now()}`,
+        name: `Global Surgical Solutions ${runId}`,
         type: "VENDOR",
-        email: `vendor-b-${Date.now()}@elpima-test.invalid`,
+        email: `vendor-b-${runId}@elpima-test.invalid`,
         city: "Abuja",
       });
     expect(resVendorB.status).toBe(201);

@@ -30,9 +30,34 @@ import { requireOrgType, requireRole } from "../../middlewares/auth.js";
 export const licensesRouter = Router();
 
 /**
- * POST /api/v1/licenses
- *
- * Submits a new verification license for the authenticated hospital tenant.
+ * @openapi
+ * /api/v1/licenses:
+ *   post:
+ *     summary: Submit a hospital verification license
+ *     description: Submits a new verification license document and metadata. Restricted to HOSPITAL organizations.
+ *     tags:
+ *       - Licenses
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [licenseNumber, issuingBody, documentUrl, expiresAt]
+ *             properties:
+ *               licenseNumber: { type: string, example: "MDCN/2026/89412" }
+ *               issuingBody: { type: string, example: "Medical and Dental Council of Nigeria" }
+ *               documentUrl: { type: string, format: uri, example: "https://storage.elpima.com/licenses/hosp1/cert.pdf" }
+ *               expiresAt: { type: string, format: date-time, example: "2028-12-31T23:59:59.000Z" }
+ *     responses:
+ *       201:
+ *         description: License submitted for review
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Forbidden (Vendors cannot submit hospital licenses)
  */
 licensesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
   try {
@@ -64,11 +89,32 @@ licensesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
 });
 
 /**
- * GET /api/v1/licenses
- *
- * Lists licenses with tenant scoping.
- * Hospitals can only retrieve their own licenses.
- * Platform admins can browse all or filter by ?organizationId=
+ * @openapi
+ * /api/v1/licenses:
+ *   get:
+ *     summary: List hospital verification licenses
+ *     description: Retrieves licenses. Hospitals see only their own licenses; PLATFORM_ADMIN can view all or filter by ?organizationId=.
+ *     tags:
+ *       - Licenses
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: ["PENDING", "APPROVED", "REJECTED"] }
+ *       - in: query
+ *         name: organizationId
+ *         schema: { type: string, format: uuid }
+ *         description: Filter by organization (PLATFORM_ADMIN only)
+ *     responses:
+ *       200:
+ *         description: Paginated license list
  */
 licensesRouter.get("/", async (req, res, next) => {
   try {
@@ -98,10 +144,25 @@ licensesRouter.get("/", async (req, res, next) => {
 });
 
 /**
- * GET /api/v1/licenses/:id
- *
- * Fetches a single license by ID.
- * Multi-tenant guard: returns 404 if accessed by an unauthorized tenant.
+ * @openapi
+ * /api/v1/licenses/{id}:
+ *   get:
+ *     summary: Get license details
+ *     description: Retrieves a single license by ID. Strictly tenant-isolated (cross-tenant reads return 404).
+ *     tags:
+ *       - Licenses
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: License details
+ *       404:
+ *         description: License not found or access denied
  */
 licensesRouter.get("/:id", async (req, res, next) => {
   try {
@@ -123,10 +184,39 @@ licensesRouter.get("/:id", async (req, res, next) => {
 });
 
 /**
- * PATCH /api/v1/licenses/:id
- *
- * Reviews a hospital license (approves or rejects).
- * Auth: PLATFORM_ADMIN only.
+ * @openapi
+ * /api/v1/licenses/{id}:
+ *   patch:
+ *     summary: Review hospital license
+ *     description: Approves or rejects a hospital compliance license. Restricted to PLATFORM_ADMIN.
+ *     tags:
+ *       - Licenses
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, enum: ["APPROVED", "REJECTED"] }
+ *               rejectionReason: { type: string, description: "Required if status is REJECTED" }
+ *     responses:
+ *       200:
+ *         description: License review status updated
+ *       400:
+ *         description: Validation error (e.g. missing rejection reason)
+ *       403:
+ *         description: Forbidden (insufficient privileges)
+ *       404:
+ *         description: License not found
  */
 licensesRouter.patch(
   "/:id",

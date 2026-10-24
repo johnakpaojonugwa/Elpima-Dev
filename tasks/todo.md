@@ -32,17 +32,17 @@ Blocks the public launch but does not block the Domain track
 - [ ] Size: M
 
 ### T0.2 — Env contract doc + .env.example
-- [ ] Description: a single file enumerating every env var the
+- [x] Description: a single file enumerating every env var the
   runtime reads, with type, required/optional, default, and a one-
   line purpose. A `.env.example` mirroring that contract, with safe
   defaults (never real secrets).
-- [ ] Acceptance:
-  - [ ] `src/docs/env-contract.md` lists every var from
+- [x] Acceptance:
+  - [x] `src/docs/env-contract.md` lists every var from
     `src/config/env.js` plus `DATABASE_URL_DIRECT`, `PORT`, `NODE_ENV`
-  - [ ] `.env.example` at repo root with the same variables, all
+  - [x] `.env.example` at repo root with the same variables, all
     values obviously fake
-  - [ ] grep across the repo for `process.env.` matches the contract
-- [ ] Verification: `grep -rE 'process\.env\.' src/ | sort -u` shows
+  - [x] grep across the repo for `process.env.` matches the contract
+- [x] Verification: `grep -rE 'process\.env\.' src/ | sort -u` shows
   nothing outside the contract
 - [ ] Dependencies: none
 - [ ] Files: `src/docs/env-contract.md`, `.env.example`
@@ -504,30 +504,30 @@ The most compliance-heavy slice. Plan accordingly.
 ## Phase 5: Production-Ops (Ops, blocks public launch)
 
 ### T5.1 — /metrics endpoint
-- [ ] Description: Prometheus metrics. Counters (requests, errors),
+- [x] Description: Prometheus metrics. Counters (requests, errors),
   histograms (latency), gauges (DB pool utilization, pgmq backlog).
-- [ ] Acceptance:
-  - [ ] `/metrics` returns 200 with all required series
-  - [ ] Scrape with `promtool` validates the format
-  - [ ] Auth-gated: not exposed without `METRICS_TOKEN` (or similar)
-- [ ] Verification: Prometheus scrape config in staging
-- [ ] Dependencies: T0.4
-- [ ] Files: `src/routes/metrics.route.js`,
+- [x] Acceptance:
+  - [x] `/metrics` returns 200 with all required series
+  - [x] Scrape with `promtool` validates the format
+  - [x] Auth-gated: not exposed without `METRICS_TOKEN` (or similar)
+- [x] Verification: Prometheus scrape config in staging
+- [x] Dependencies: T0.4
+- [x] Files: `src/routes/metrics.route.js`,
   `src/utils/metrics.js`,
   `test/metrics.test.js`
 - [ ] Size: M
 
 ### T5.2 — /healthz split
-- [ ] Description: rename `/health` to `/healthz/live` (deep,
+- [x] Description: rename `/health` to `/healthz/live` (deep,
   `SELECT 1`); add `/healthz/ready` (shallow, process-only).
-- [ ] Acceptance:
-  - [ ] `/healthz/live` returns 200 only if the DB is reachable
-  - [ ] `/healthz/ready` returns 200 as long as the process is up
-  - [ ] Dockerfile's `HEALTHCHECK` updated to `/healthz/live`
-- [ ] Verification: kill the DB connection in staging; `/healthz/ready`
+- [x] Acceptance:
+  - [x] `/healthz/live` returns 200 only if the DB is reachable
+  - [x] `/healthz/ready` returns 200 as long as the process is up
+  - [x] Dockerfile's `HEALTHCHECK` updated to `/healthz/live`
+- [x] Verification: kill the DB connection in staging; `/healthz/ready`
   still 200, `/healthz/live` 503
-- [ ] Dependencies: T0.4
-- [ ] Files: `src/routes/health.route.js`, `Dockerfile`
+- [x] Dependencies: T0.4
+- [x] Files: `src/routes/health.route.js`, `Dockerfile`
 - [ ] Size: S
 
 ### T5.3 — JWKS rotation
@@ -589,19 +589,19 @@ The most compliance-heavy slice. Plan accordingly.
 - [ ] Size: S
 
 ### T5.7 — Slow-query logging
-- [ ] Description: `prisma.$on('query', ...)` gated on
+- [x] Description: `prisma.$on('query', ...)` gated on
   `NODE_ENV !== 'production'`. Whitelist tables — never
   `licenses`, never `audit_logs`. Never include parameter values
   (PHI risk).
-- [ ] Acceptance:
-  - [ ] Slow query (>100ms) logged at `warn` level with the query
+- [x] Acceptance:
+  - [x] Slow query (>100ms) logged at `warn` level with the query
     text but no params
-  - [ ] Test: run a license read; assert the log line has the query
+  - [x] Test: run a license read; assert the log line has the query
     but not the params
-  - [ ] Production builds do not register the listener
-- [ ] Verification: integration test; manual staging observation
-- [ ] Dependencies: T4.8
-- [ ] Files: `src/config/prisma.js`
+  - [x] Production builds do not register the listener
+- [x] Verification: integration test; manual staging observation
+- [x] Dependencies: T4.8
+- [x] Files: `src/config/prisma.js`
 - [ ] Size: S
 
 ### T5.8 — Dependency scan in CI

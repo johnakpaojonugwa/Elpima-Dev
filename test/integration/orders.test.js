@@ -5,6 +5,7 @@
 //   - T4.5b: GET /api/v1/orders/:id (participating org 200, non-participating 404, audit log)
 //   - T4.6: PATCH /api/v1/orders/:id (vendor confirm & fulfill, state transition validation, audit log)
 
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -55,13 +56,14 @@ describe.skipIf(skipReason)("Orders & Fulfillment API (/api/v1/orders)", () => {
     );
 
     // 2. Provision Hospital Org A (Buyer)
+    const runId = randomUUID().slice(0, 8);
     const resHospA = await request(app)
       .post("/api/v1/organizations")
       .set("Authorization", `Bearer ${platformAdminToken}`)
       .send({
-        name: `Cedarcrest Hospitals ${Date.now()}`,
+        name: `Cedarcrest Hospitals ${runId}`,
         type: "HOSPITAL",
-        email: `hosp-a-${Date.now()}@elpima-test.invalid`,
+        email: `hosp-a-${runId}@elpima-test.invalid`,
         city: "Apo, Abuja",
       });
     expect(resHospA.status).toBe(201);
@@ -73,9 +75,9 @@ describe.skipIf(skipReason)("Orders & Fulfillment API (/api/v1/orders)", () => {
       .post("/api/v1/organizations")
       .set("Authorization", `Bearer ${platformAdminToken}`)
       .send({
-        name: `Nizamiye Hospital ${Date.now()}`,
+        name: `Nizamiye Hospital ${runId}`,
         type: "HOSPITAL",
-        email: `hosp-b-${Date.now()}@elpima-test.invalid`,
+        email: `hosp-b-${runId}@elpima-test.invalid`,
         city: "Idu, Abuja",
       });
     expect(resHospB.status).toBe(201);
@@ -87,9 +89,9 @@ describe.skipIf(skipReason)("Orders & Fulfillment API (/api/v1/orders)", () => {
       .post("/api/v1/organizations")
       .set("Authorization", `Bearer ${platformAdminToken}`)
       .send({
-        name: `Universal Medical Devices ${Date.now()}`,
+        name: `Universal Medical Devices ${runId}`,
         type: "VENDOR",
-        email: `vendor-a-${Date.now()}@elpima-test.invalid`,
+        email: `vendor-a-${runId}@elpima-test.invalid`,
         city: "Yaba, Lagos",
       });
     expect(resVendorA.status).toBe(201);

@@ -30,10 +30,40 @@ import { requireOrgType } from "../../middlewares/auth.js";
 export const quotesRouter = Router();
 
 /**
- * POST /api/v1/quotes
- *
- * Requests a new quotation / RFQ from a vendor.
- * Computes pricing server-side and writes atomically.
+ * @openapi
+ * /api/v1/quotes:
+ *   post:
+ *     summary: Request a quotation (RFQ)
+ *     description: Hospital requests pricing for selected vendor products. Line totals and total amount are calculated server-side.
+ *     tags:
+ *       - Quotes
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [vendorId, items]
+ *             properties:
+ *               vendorId: { type: string, format: uuid }
+ *               notes: { type: string, example: "Delivery needed by end of month" }
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [productId, quantity]
+ *                   properties:
+ *                     productId: { type: string, format: uuid }
+ *                     quantity: { type: integer, minimum: 1, example: 10 }
+ *     responses:
+ *       201:
+ *         description: RFQ quote created successfully
+ *       400:
+ *         description: Validation error or product not found
+ *       403:
+ *         description: Forbidden (Vendors cannot request quotes)
  */
 quotesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
   try {
@@ -65,9 +95,28 @@ quotesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
 });
 
 /**
- * GET /api/v1/quotes
- *
- * Lists quotes with bi-tenant scoping (hospitals view RFQs, vendors view incoming quotes).
+ * @openapi
+ * /api/v1/quotes:
+ *   get:
+ *     summary: List quotations
+ *     description: Lists quotes with bi-tenant scoping (hospitals view their RFQs, vendors view received quotation requests).
+ *     tags:
+ *       - Quotes
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: ["DRAFT", "SENT", "ACCEPTED", "DECLINED"] }
+ *     responses:
+ *       200:
+ *         description: Paginated quote list
  */
 quotesRouter.get("/", async (req, res, next) => {
   try {
@@ -97,9 +146,25 @@ quotesRouter.get("/", async (req, res, next) => {
 });
 
 /**
- * GET /api/v1/quotes/:id
- *
- * Fetches a single quote by ID with bi-tenant isolation.
+ * @openapi
+ * /api/v1/quotes/{id}:
+ *   get:
+ *     summary: Get quotation details
+ *     description: Retrieves quotation and line items. Access restricted to the purchasing hospital and supplying vendor.
+ *     tags:
+ *       - Quotes
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Quote details
+ *       404:
+ *         description: Quote not found or unauthorized
  */
 quotesRouter.get("/:id", async (req, res, next) => {
   try {
@@ -121,10 +186,38 @@ quotesRouter.get("/:id", async (req, res, next) => {
 });
 
 /**
- * PATCH /api/v1/quotes/:id
- *
- * Updates quote status (SENT, ACCEPTED, DECLINED).
- * When ACCEPTED, automatically provisions corresponding Order record.
+ * @openapi
+ * /api/v1/quotes/{id}:
+ *   patch:
+ *     summary: Transition quote status
+ *     description: Updates quotation status. Vendors can send (SENT); Hospitals can accept (ACCEPTED) or decline (DECLINED). Accepting a quote automatically creates a purchase Order.
+ *     tags:
+ *       - Quotes
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, enum: ["SENT", "ACCEPTED", "DECLINED"] }
+ *     responses:
+ *       200:
+ *         description: Quote status updated (and Order created if ACCEPTED)
+ *       400:
+ *         description: Invalid state transition
+ *       403:
+ *         description: Forbidden (Caller not permitted to execute this transition)
+ *       404:
+ *         description: Quote not found
  */
 quotesRouter.patch("/:id", async (req, res, next) => {
   try {

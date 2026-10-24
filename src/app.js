@@ -11,6 +11,7 @@ import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 import { morganStream } from './utils/logger.js';
 import { correlationId } from './middlewares/correlationId.js';
 import { setupSwagger } from './config/swagger.js';
+import { metricsMiddleware } from './utils/metrics.js';
 
 // Custom morgan format: returns a JSON-encoded line so the stream
 // (morganStream.write in utils/logger.js) can pull structured fields
@@ -53,6 +54,7 @@ export function createApp() {
   // a response (rate limit, route handlers, errorHandler) so even a
   // 401/404/500 response has an X-Request-Id header.
   app.use(correlationId);
+  app.use(metricsMiddleware);
 
   // JSON access log. The format function reads req.correlationId and
   // req.user; both are set before morgan runs (correlation ID by the

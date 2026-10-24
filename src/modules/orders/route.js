@@ -26,9 +26,28 @@ import {
 export const ordersRouter = Router();
 
 /**
- * GET /api/v1/orders
- *
- * Lists orders with dual-tenant isolation.
+ * @openapi
+ * /api/v1/orders:
+ *   get:
+ *     summary: List purchase orders
+ *     description: Retrieves orders with bi-tenant scoping. Hospitals see orders they have placed; Vendors see orders for their products.
+ *     tags:
+ *       - Orders
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: ["PENDING", "CONFIRMED", "FULFILLED", "CANCELLED"] }
+ *     responses:
+ *       200:
+ *         description: Paginated order list
  */
 ordersRouter.get("/", async (req, res, next) => {
   try {
@@ -58,9 +77,25 @@ ordersRouter.get("/", async (req, res, next) => {
 });
 
 /**
- * GET /api/v1/orders/:id
- *
- * Fetches single order details by ID with bi-tenant guard.
+ * @openapi
+ * /api/v1/orders/{id}:
+ *   get:
+ *     summary: Get purchase order details
+ *     description: Retrieves order details and item lines. Strictly scoped to the purchasing hospital or supplying vendor.
+ *     tags:
+ *       - Orders
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Order details
+ *       404:
+ *         description: Order not found or unauthorized
  */
 ordersRouter.get("/:id", async (req, res, next) => {
   try {
@@ -82,9 +117,38 @@ ordersRouter.get("/:id", async (req, res, next) => {
 });
 
 /**
- * PATCH /api/v1/orders/:id
- *
- * Updates order status (CONFIRMED, FULFILLED, CANCELLED).
+ * @openapi
+ * /api/v1/orders/{id}:
+ *   patch:
+ *     summary: Update order fulfillment status
+ *     description: Transitions order status. Supplying vendor can confirm (CONFIRMED) or fulfill (FULFILLED). Purchasing hospital can cancel (CANCELLED) if pending.
+ *     tags:
+ *       - Orders
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, enum: ["CONFIRMED", "FULFILLED", "CANCELLED"] }
+ *     responses:
+ *       200:
+ *         description: Order status updated successfully
+ *       400:
+ *         description: Invalid state transition
+ *       403:
+ *         description: Forbidden (Caller not permitted to execute transition)
+ *       404:
+ *         description: Order not found
  */
 ordersRouter.patch("/:id", async (req, res, next) => {
   try {

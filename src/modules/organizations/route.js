@@ -31,10 +31,36 @@ import { AppError } from "../../utils/AppError.js";
 export const organizationsRouter = Router();
 
 /**
- * POST /api/v1/organizations
- *
- * Body: CreateOrganizationSchema
- * Auth: PLATFORM_ADMIN only
+ * @openapi
+ * /api/v1/organizations:
+ *   post:
+ *     summary: Register a new organization and root admin user
+ *     description: Atomically provisions an organization and its initial administrator. Accessible only to PLATFORM_ADMIN.
+ *     tags:
+ *       - Organizations
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, type, email, password]
+ *             properties:
+ *               name: { type: string, example: "St. Jude Hospital" }
+ *               type: { type: string, enum: ["HOSPITAL", "VENDOR"], example: "HOSPITAL" }
+ *               email: { type: string, format: email, example: "admin@stjude.org" }
+ *               password: { type: string, minLength: 8, example: "SecurePass123!" }
+ *               phone: { type: string, example: "+2348012345678" }
+ *               address: { type: string, example: "Plot 12, Medical District, Abuja" }
+ *     responses:
+ *       201:
+ *         description: Organization and admin user created
+ *       400:
+ *         description: Validation error or duplicate email
+ *       403:
+ *         description: Forbidden (insufficient permissions)
  */
 organizationsRouter.post("/", requireRole("PLATFORM_ADMIN"), async (req, res, next) => {
   try {
@@ -67,11 +93,27 @@ organizationsRouter.post("/", requireRole("PLATFORM_ADMIN"), async (req, res, ne
 });
 
 /**
- * GET /api/v1/organizations/:id
- *
- * Reads an organization by ID.
- * Multi-tenant guard: Non-platform admins can ONLY access their own organization.
- * Cross-tenant accesses fail with 404 to avoid ID enumeration.
+ * @openapi
+ * /api/v1/organizations/{id}:
+ *   get:
+ *     summary: Retrieve an organization by ID
+ *     description: Reads organization details. Scoped to caller's own tenant; PLATFORM_ADMIN can access any. Cross-tenant access returns 404.
+ *     tags:
+ *       - Organizations
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Organization profile retrieved
+ *       404:
+ *         description: Organization not found or cross-tenant access denied
  */
 organizationsRouter.get("/:id", async (req, res, next) => {
   try {
@@ -105,11 +147,38 @@ organizationsRouter.get("/:id", async (req, res, next) => {
 });
 
 /**
- * PATCH /api/v1/organizations/:id
- *
- * Updates an organization profile.
- * Auth: ORG_ADMIN or PLATFORM_ADMIN.
- * Multi-tenant guard: ORG_ADMIN can only update their own organization.
+ * @openapi
+ * /api/v1/organizations/{id}:
+ *   patch:
+ *     summary: Update an organization
+ *     description: Modifies organization details. Scoped to ORG_ADMIN for own organization or PLATFORM_ADMIN for any.
+ *     tags:
+ *       - Organizations
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               phone: { type: string }
+ *               address: { type: string }
+ *               status: { type: string, enum: ["ACTIVE", "SUSPENDED", "PENDING_VERIFICATION"] }
+ *     responses:
+ *       200:
+ *         description: Organization updated successfully
+ *       404:
+ *         description: Organization not found or cross-tenant access denied
  */
 organizationsRouter.patch(
   "/:id",

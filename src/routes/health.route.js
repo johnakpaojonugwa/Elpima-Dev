@@ -4,9 +4,22 @@ import { logger } from "../utils/logger.js";
 
 export const healthRouter = Router();
 
-// Shallow liveness check: does not touch external dependencies (database, cache).
-// Orchestrators (Kubernetes, ECS, Fly, Render) poll this to determine if the
-// container process is alive and responsive.
+/**
+ * @openapi
+ * /healthz/live:
+ *   get:
+ *     summary: Shallow liveness probe
+ *     description: Returns 200 OK if the Node.js process is up and running. Does not touch the database.
+ *     tags:
+ *       - Health
+ *     responses:
+ *       200:
+ *         description: Process is alive
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ */
 healthRouter.get("/live", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -15,8 +28,20 @@ healthRouter.get("/live", (req, res) => {
   });
 });
 
-// Deep readiness check: verifies connectivity to essential dependencies (Postgres).
-// Load balancers use this to route traffic only to healthy instances.
+/**
+ * @openapi
+ * /healthz/ready:
+ *   get:
+ *     summary: Deep readiness probe
+ *     description: Verifies end-to-end database connectivity (SELECT 1). Returns 503 if unreachable.
+ *     tags:
+ *       - Health
+ *     responses:
+ *       200:
+ *         description: Database is connected and healthy
+ *       503:
+ *         description: Database is unreachable
+ */
 async function checkReadiness(req, res) {
   const startedAt = Date.now();
 

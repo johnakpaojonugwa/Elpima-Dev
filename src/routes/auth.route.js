@@ -16,7 +16,38 @@ export const authRouter = Router();
 // `authRateLimit` is mounted before `requireAuth` so an attacker
 // without a valid token can't burn CPU on signature verification for
 // every probe. The global 300/15min limit in app.js is a baseline;
-// this tighter layer is the per-route floor for auth endpoints.
+/**
+ * @openapi
+ * /auth/me:
+ *   get:
+ *     summary: Get current authenticated user profile
+ *     description: Returns the user metadata and claims decoded from the verified JWT access token.
+ *     tags:
+ *       - Auth
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user claims
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id: { type: string, format: uuid }
+ *                         email: { type: string, format: email }
+ *                         role: { type: string, example: "HOSPITAL" }
+ *                         organizationId: { type: string, format: uuid }
+ *       401:
+ *         description: Missing, invalid, or expired JWT token
+ */
 authRouter.get("/me", authRateLimit, requireAuth, (req, res) => {
   res.json({
     success: true,
