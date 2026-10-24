@@ -4,6 +4,7 @@ import { authRouter } from "./auth.route.js";
 import { requireAuth, requireRole } from "../middlewares/auth.js";
 import { organizationsRouter } from "../modules/organizations/route.js";
 import { productsRouter } from "../modules/products/route.js";
+import { licensesRouter } from "../modules/licenses/route.js";
 
 export const router = Router();
 
@@ -39,4 +40,13 @@ router.use(
   "/api/v1/products",
   requireAuth,
   productsRouter,
+);
+
+// Licenses: Hospital verification documents & compliance review.
+// All routes require authentication. Submission (POST) requires HOSPITAL role;
+// review (PATCH) requires PLATFORM_ADMIN; listing/detail is tenant-isolated.
+router.use(
+  "/api/v1/licenses",
+  requireAuth,
+  licensesRouter,
 );

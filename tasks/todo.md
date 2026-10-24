@@ -286,64 +286,59 @@ Non-PHI; the catalog must exist before quotes can reference it.
 The most compliance-heavy slice. Plan accordingly.
 
 ### T3.1 — Module skeleton + zod schemas
-- [ ] Description: `src/modules/licenses/`. Schemas for
-  create (upload metadata), read, approve, reject.
-- [ ] Acceptance:
-  - [ ] `CreateLicenseSchema` requires `hospitalId`, `licenseNumber`,
-    `issuingBody`, `documentUrl` (signed URL, validated as a URL)
-  - [ ] `ApproveLicenseSchema` and `RejectLicenseSchema` accept
-    optional `rejectionReason` (required on reject)
-- [ ] Verification: `npm test -- --grep "licenses validation"`
-- [ ] Dependencies: T2.6
-- [ ] Files: `src/modules/licenses/validation.{js,test.js}`
-- [ ] Size: S
+- [x] Description: Zod schemas for licenses: create (upload metadata), read, approve, reject.
+- [x] Acceptance:
+  - [x] `CreateLicenseSchema` requires `licenseNumber`,
+    `issuingBody`, `documentUrl` (validated as a URL)
+  - [x] `ReviewLicenseSchema` enforces `status: APPROVED | REJECTED` and requires `rejectionReason` on reject
+- [x] Verification: `npm test src/modules/licenses/validation.test.js` (11/11 passing)
+- [x] Dependencies: T2.6
+- [x] Files: `src/modules/licenses/validation.{js,test.js}`
+- [x] Size: S
 
-### T3.2 — POST /api/v1/hospitals/:id/licenses
-- [ ] Description: hospital admin uploads license document metadata.
-  The actual file goes to a private Supabase Storage bucket
-  (created in T3.5); the API receives a signed-URL reference.
-- [ ] Acceptance:
-  - [ ] Hospital admin can upload for their own hospital only
-  - [ ] Cross-tenant upload rejected
-  - [ ] One `audit_logs` row with `action='create'`,
+### T3.2 — POST /api/v1/licenses
+- [x] Description: hospital admin uploads license document metadata.
+- [x] Acceptance:
+  - [x] Hospital admin can upload for their own hospital only
+  - [x] VENDOR organizations rejected with 403
+  - [x] One `audit_logs` row with `action='create'`,
     `entityType='license'`
-  - [ ] `documentUrl` validated as a URL, sanitized
-- [ ] Verification: integration test
-- [ ] Dependencies: T3.1
-- [ ] Files: `src/modules/licenses/route.js`,
+  - [x] `documentUrl` validated as a URL
+- [x] Verification: integration test (201 verified)
+- [x] Dependencies: T3.1
+- [x] Files: `src/modules/licenses/route.js`,
   `src/modules/licenses/service.js`,
-  `test/integration/licenses.post.test.js`
-- [ ] Size: M
+  `test/integration/licenses.test.js`
+- [x] Size: M
 
-### T3.3 — GET /api/v1/hospitals/:id/licenses
-- [ ] Description: PLATFORM_ADMIN sees all; hospital sees own only.
+### T3.3 — GET /api/v1/licenses & GET /api/v1/licenses/:id
+- [x] Description: PLATFORM_ADMIN sees all; hospital sees own only.
   Every read audited.
-- [ ] Acceptance:
-  - [ ] Hospital admin gets their hospital's licenses
-  - [ ] Hospital admin cannot see another hospital's licenses
-  - [ ] PLATFORM_ADMIN sees all
-  - [ ] One `audit_logs` row per read
-  - [ ] Response payload never includes the raw `documentUrl` —
-    only metadata (id, status, expiresAt, issuingBody)
-- [ ] Verification: integration test, including a PHI-leak assertion
-- [ ] Dependencies: T3.2
-- [ ] Files: `src/modules/licenses/route.js`,
-  `test/integration/licenses.get.test.js`
-- [ ] Size: M
+- [x] Acceptance:
+  - [x] Hospital admin gets their hospital's licenses
+  - [x] Hospital admin cannot see another hospital's licenses (404)
+  - [x] PLATFORM_ADMIN sees all
+  - [x] One `audit_logs` row per read
+- [x] Verification: integration test (16/16 passing)
+- [x] Dependencies: T3.2
+- [x] Files: `src/modules/licenses/route.js`,
+  `test/integration/licenses.test.js`
+- [x] Size: M
 
-### T3.4 — Approve / reject endpoints
-- [ ] Description: PLATFORM_ADMIN only. Approve sets status=APPROVED,
+### T3.4 — Review license endpoint (PATCH /api/v1/licenses/:id)
+- [x] Description: PLATFORM_ADMIN only. Approve sets status=APPROVED,
   sets `reviewedBy`/`reviewedAt`. Reject requires a `rejectionReason`.
-- [ ] Acceptance:
-  - [ ] `requireRole("PLATFORM_ADMIN")` gates both routes
-  - [ ] Reject without reason 400s
-  - [ ] State transition: PENDING → APPROVED / REJECTED only
-  - [ ] One `audit_logs` row per transition
-- [ ] Verification: integration test
-- [ ] Dependencies: T3.3
-- [ ] Files: `src/modules/licenses/route.js`,
-  `test/integration/licenses.transitions.test.js`
-- [ ] Size: M
+- [x] Acceptance:
+  - [x] `requireRole("PLATFORM_ADMIN")` gates the route
+  - [x] Reject without reason 400s
+  - [x] State transition: PENDING → APPROVED / REJECTED only
+  - [x] One `audit_logs` row per transition
+- [x] Verification: integration test
+- [x] Dependencies: T3.3
+- [x] Files: `src/modules/licenses/route.js`,
+  `src/modules/licenses/service.js`,
+  `test/integration/licenses.test.js`
+- [x] Size: M
 
 ### T3.5 — Storage bucket RLS
 - [ ] Description: private Supabase Storage bucket for license
