@@ -27,6 +27,9 @@ jobs:
       - name: Validate Prisma Schema
         run: npx prisma validate
 
+      - name: Dependency Security Audit
+        run: npm audit --audit-level=high
+
       - name: Run Unit & Routing Tests
         run: npm test
         env:

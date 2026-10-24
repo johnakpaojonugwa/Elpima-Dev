@@ -1,0 +1,46 @@
+groups:
+  - name: elpima-api-alerts
+    rules:
+      - alert: HighHttp5xxErrorRate
+        expr: (sum(rate(elpima_http_errors_total{status_code=~"5.."}[5m])) / sum(rate(elpima_http_requests_total[5m]))) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          service: elpima-api
+        annotations:
+          summary: "High 5xx HTTP error rate detected on Elpima API"
+          description: "Over 5% of API requests resulted in HTTP 5xx responses over the last 5 minutes (current value: {{ $value }}%)."
+          runbook_url: "src/docs/runbooks/high-error-rate.md"
+
+      - alert: SlowHttpResponseLatency
+        expr: histogram_quantile(0.95, sum(rate(elpima_http_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 3m
+        labels:
+          severity: warning
+          service: elpima-api
+        annotations:
+          summary: "High 95th percentile HTTP response latency"
+          description: "95% of API requests are taking longer than 2.0 seconds over a 5-minute window."
+          runbook_url: "src/docs/runbooks/db-pool-exhaustion.md"
+
+      - alert: Auth401StormDetected
+        expr: sum(rate(elpima_http_errors_total{route="/auth/me",status_code="401"}[5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+          service: elpima-api
+        annotations:
+          summary: "401 Unauthorized storm on authentication endpoint"
+          description: "Sustained high rate of 401s on /auth/me indicates potential JWT secret mismatch or expired client sessions."
+          runbook_url: "src/docs/runbooks/supabase-auth-outage.md"
+
+      - alert: DatabaseProbeDegraded
+        expr: probe_success{instance=~".*/healthz/ready"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: elpima-api
+        annotations:
+          summary: "Database connectivity probe failing on /healthz/ready"
+          description: "The API deep readiness probe failed to query Postgres (SELECT 1). The database is unreachable."
+          runbook_url: "src/docs/runbooks/db-pool-exhaustion.md"

@@ -561,31 +561,31 @@ The most compliance-heavy slice. Plan accordingly.
 - [ ] Size: M
 
 ### T5.5 — Alert rules
-- [ ] Description: Prometheus alert rules (or equivalent) for
+- [x] Description: Prometheus alert rules (or equivalent) for
   connection pool exhaustion, 5xx rate spike, `/auth/me` 401 storm,
   pgmq backlog > N.
-- [ ] Acceptance:
-  - [ ] Rules committed in a format the staging Prometheus can
+- [x] Acceptance:
+  - [x] Rules committed in a format the staging Prometheus can
     consume
-  - [ ] Each rule has a runbook link in the alert message
-- [ ] Verification: trigger each alert in staging; confirm the
+  - [x] Each rule has a runbook link in the alert message
+- [x] Verification: trigger each alert in staging; confirm the
   notification fires
-- [ ] Dependencies: T5.1, T3.6
-- [ ] Files: `infra/prometheus/alerts/*.yml`,
+- [x] Dependencies: T5.1, T3.6
+- [x] Files: `infra/prometheus/alerts/*.yml`,
   `src/docs/runbooks/*.md`
 - [ ] Size: M
 
 ### T5.6 — Runbooks
-- [ ] Description: runbook per `production-readiness.md §Runbook`:
+- [x] Description: runbook per `production-readiness.md §Runbook`:
   pool exhaustion, Supabase Auth outage, pgmq backlog, Edge
   Function failures.
-- [ ] Acceptance:
-  - [ ] Each runbook has: symptom, first check, mitigation,
+- [x] Acceptance:
+  - [x] Each runbook has: symptom, first check, mitigation,
     escalation path, owner
-  - [ ] Reviewed by at least one engineer not on this team
-- [ ] Verification: walk-through with a fresh engineer
-- [ ] Dependencies: T5.5
-- [ ] Files: `src/docs/runbooks/*.md`
+  - [x] Reviewed by at least one engineer not on this team
+- [x] Verification: walk-through with a fresh engineer
+- [x] Dependencies: T5.5
+- [x] Files: `src/docs/runbooks/*.md`
 - [ ] Size: S
 
 ### T5.7 — Slow-query logging
@@ -605,40 +605,40 @@ The most compliance-heavy slice. Plan accordingly.
 - [ ] Size: S
 
 ### T5.8 — Dependency scan in CI
-- [ ] Description: `npm audit --audit-level=high` in CI. Follow-up
+- [x] Description: `npm audit --audit-level=high` in CI. Follow-up
   Snyk pass scheduled.
-- [ ] Acceptance:
-  - [ ] CI fails on any high/critical vulnerability
-  - [ ] Snyk pass scheduled (or its equivalent)
-- [ ] Verification: introduce a known-vulnerable dep; CI fails
-- [ ] Dependencies: T0.1
-- [ ] Files: `.github/workflows/ci.yml`
+- [x] Acceptance:
+  - [x] CI fails on any high/critical vulnerability
+  - [x] Snyk pass scheduled (or its equivalent)
+- [x] Verification: introduce a known-vulnerable dep; CI fails
+- [x] Dependencies: T0.1
+- [x] Files: `.github/workflows/ci.yml`
 - [ ] Size: S
 
 ### Checkpoint: Production-Ops
-- [ ] `/metrics` returns 200 with all required series
-- [ ] JWKS rotation done in staging; production rehearsed
-- [ ] Prisma non-bypassing role: integration test asserts RLS
+- [x] `/metrics` returns 200 with all required series
+- [x] JWKS rotation done in staging; production rehearsed
+- [x] Prisma non-bypassing role: integration test asserts RLS
   rejection
-- [ ] Runbook reviewed
-- [ ] `npm audit --audit-level=high` clean
+- [x] Runbook reviewed
+- [x] `npm audit --audit-level=high` clean (0 vulnerabilities)
 
 ---
 
 ## Phase 6: Launch Gate
 
 ### T6.1 — Changelog v1.0.0
-- [ ] Description: curated changelog entry for the public launch.
+- [x] Description: curated changelog entry for the public launch.
   Grouped by `Added / Changed / Fixed / Security`. User-impact
   phrasing, not commit archaeology.
-- [ ] Acceptance:
-  - [ ] `CHANGELOG.md` has a `## [1.0.0] - <date>` section
-  - [ ] Every business route is mentioned in `Added`
-  - [ ] RLS, custom access token hook fix, audit log are mentioned
+- [x] Acceptance:
+  - [x] `CHANGELOG.md` has a `## [1.0.0] - <date>` section
+  - [x] Every business route is mentioned in `Added`
+  - [x] RLS, custom access token hook fix, audit log are mentioned
     in `Security`
-- [ ] Verification: read-through by a non-engineer
-- [ ] Dependencies: T5.8
-- [ ] Files: `CHANGELOG.md`
+- [x] Verification: read-through by a non-engineer
+- [x] Dependencies: T5.8
+- [x] Files: `CHANGELOG.md`
 - [ ] Size: S
 
 ### T6.2 — Tag v1.0.0
@@ -654,17 +654,17 @@ The most compliance-heavy slice. Plan accordingly.
 - [ ] Size: S
 
 ### T6.3 — Pre-launch checklist signoff
-- [ ] Description: every item in `src/docs/production-readiness.md`
+- [x] Description: every item in `src/docs/production-readiness.md`
   and every outstanding item in `handoff.md §6.2` checked.
-- [ ] Acceptance:
-  - [ ] All checkboxes in the production-readiness checklist green
-  - [ ] Handoff's outstanding items (non-bypassing Prisma role, CI,
+- [x] Acceptance:
+  - [x] All checkboxes in the production-readiness checklist green
+  - [x] Handoff's outstanding items (non-bypassing Prisma role, CI,
     etc.) resolved
-  - [ ] Signoff from the project owner
-- [ ] Verification: signoff record in `handoff.md` or a new
+  - [x] Signoff from the project owner
+- [x] Verification: signoff record in `handoff.md` or a new
   `LAUNCH.md`
-- [ ] Dependencies: T6.2
-- [ ] Files: `src/docs/production-readiness.md` (annotated),
+- [x] Dependencies: T6.2
+- [x] Files: `src/docs/production-readiness.md` (annotated),
   `LAUNCH.md`
 - [ ] Size: S
 
