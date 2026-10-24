@@ -14,13 +14,13 @@ import { AppError } from "../../utils/AppError.js";
 /**
  * List orders with dual-tenant scoping.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {object} query Validated ListOrdersQuerySchema
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {object} queryParameters Validated ListOrdersQuerySchema
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<{ items: object[], nextCursor: string|null, limit: number }>}
  */
-export async function listOrders(db, query, actor) {
-  const { cursor, limit = 20, status } = query;
+export async function listOrders(databaseClient, queryParameters, actor) {
+  const { cursor, limit = 20, status } = queryParameters;
 
   const isPlatformAdmin = actor?.role === "PLATFORM_ADMIN";
 
@@ -29,21 +29,21 @@ export async function listOrders(db, query, actor) {
   };
 
   if (!isPlatformAdmin) {
-    const org = await db.organization.findUnique({
+    const organization = await databaseClient.organization.findUnique({
       where: { id: actor.organizationId },
       select: { type: true },
     });
 
-    if (org?.type === "HOSPITAL") {
+    if (organization?.type === "HOSPITAL") {
       where.hospitalId = actor.organizationId;
-    } else if (org?.type === "VENDOR") {
+    } else if (organization?.type === "VENDOR") {
       where.quote = { vendorId: actor.organizationId };
     } else {
       where.hospitalId = actor.organizationId;
     }
   }
 
-  const orders = await db.order.findMany({
+  const orders = await databaseClient.order.findMany({
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     where,
@@ -77,14 +77,14 @@ export async function listOrders(db, query, actor) {
 /**
  * Retrieve order details by ID with bi-tenant scoping and audit log.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id Order UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} orderId Order UUID
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>}
  */
-export async function getOrderById(db, id, actor) {
-  const order = await db.order.findUnique({
-    where: { id },
+export async function getOrderById(databaseClient, orderId, actor) {
+  const order = await databaseClient.order.findUnique({
+    where: { id: orderId },
     include: {
       items: {
         include: {
@@ -117,13 +117,13 @@ export async function getOrderById(db, id, actor) {
   }
 
   // Audit read
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId: actor.organizationId ?? order.hospitalId,
       userId: actor?.id ?? null,
       action: "read",
       entityType: "order",
-      entityId: id,
+      entityId: orderId,
       metadata: {
         actorRole: actor?.role ?? "ORG_STAFF",
       },
@@ -137,15 +137,15 @@ export async function getOrderById(db, id, actor) {
 /**
  * Update order fulfillment status.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id Order UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} orderId Order UUID
  * @param {string} newStatus "CONFIRMED" | "FULFILLED" | "CANCELLED"
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>}
  */
-export async function updateOrderStatus(db, id, newStatus, actor) {
-  const order = await db.order.findUnique({
-    where: { id },
+export async function updateOrderStatus(databaseClient, orderId, newStatus, actor) {
+  const order = await databaseClient.order.findUnique({
+    where: { id: orderId },
     include: {
       quote: { select: { vendorId: true } },
     },
@@ -188,8 +188,8 @@ export async function updateOrderStatus(db, id, newStatus, actor) {
     throw new AppError(400, `Cannot cancel order in ${order.status} status; confirmed or fulfilled orders cannot be cancelled`);
   }
 
-  const updatedOrder = await db.order.update({
-    where: { id },
+  const updatedOrder = await databaseClient.order.update({
+    where: { id: orderId },
     data: { status: newStatus },
     include: {
       items: true,
@@ -198,13 +198,13 @@ export async function updateOrderStatus(db, id, newStatus, actor) {
     },
   });
 
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId: actor?.organizationId ?? order.hospitalId,
       userId: actor?.id ?? null,
       action: "update_status",
       entityType: "order",
-      entityId: id,
+      entityId: orderId,
       metadata: {
         previousStatus: order.status,
         newStatus,

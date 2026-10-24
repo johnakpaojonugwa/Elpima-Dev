@@ -19,23 +19,23 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000).unref();
 
-export function idempotency(req, res, next) {
+export function idempotency(request, response, next) {
   // Only apply to mutating requests
-  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") {
     return next();
   }
 
-  const idempotencyKey = req.headers["idempotency-key"] || req.headers["x-idempotency-key"];
+  const idempotencyKey = request.headers["idempotency-key"] || request.headers["x-idempotency-key"];
   if (!idempotencyKey) {
     return next();
   }
 
-  const cacheKey = `${req.user?.id || req.ip}:${req.method}:${req.baseUrl}${req.path}:${idempotencyKey}`;
+  const cacheKey = `${request.user?.id || request.ip}:${request.method}:${request.baseUrl}${request.path}:${idempotencyKey}`;
   const existing = cache.get(cacheKey);
 
   if (existing) {
     if (existing.status === "in_flight") {
-      return res.status(409).json({
+      return response.status(409).json({
         success: false,
         error: {
           message: "A request with this Idempotency-Key is currently in progress",
@@ -45,29 +45,29 @@ export function idempotency(req, res, next) {
     }
 
     // Replay cached response
-    res.set("Idempotency-Replay", "true");
+    response.set("Idempotency-Replay", "true");
     if (existing.headers) {
-      for (const [header, val] of Object.entries(existing.headers)) {
-        if (!res.hasHeader(header)) {
-          res.set(header, val);
+      for (const [header, headerValue] of Object.entries(existing.headers)) {
+        if (!response.hasHeader(header)) {
+          response.set(header, headerValue);
         }
       }
     }
-    return res.status(existing.statusCode).json(existing.body);
+    return response.status(existing.statusCode).json(existing.body);
   }
 
   // Mark in-flight
   cache.set(cacheKey, { status: "in_flight", timestamp: Date.now() });
 
-  const originalJson = res.json.bind(res);
+  const originalJson = response.json.bind(response);
 
-  res.json = (body) => {
+  response.json = (body) => {
     // Only cache successful client operations (2xx) or definitive validation rejections (4xx)
     // 5xx internal server errors are not cached to allow safe retry
-    if (res.statusCode < 500) {
+    if (response.statusCode < 500) {
       cache.set(cacheKey, {
         status: "completed",
-        statusCode: res.statusCode,
+        statusCode: response.statusCode,
         body,
         headers: {
           "content-type": "application/json",

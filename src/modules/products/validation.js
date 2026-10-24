@@ -14,7 +14,7 @@ function optionalText(maxLength) {
     .trim()
     .max(maxLength, `must be ${maxLength} characters or fewer`)
     .optional()
-    .transform((v) => (v === undefined || v === "" ? undefined : v));
+    .transform((fieldValue) => (fieldValue === undefined || fieldValue === "" ? undefined : fieldValue));
 }
 
 export const CreateProductSchema = z
@@ -47,7 +47,7 @@ export const CreateProductSchema = z
       .string()
       .uuid("categoryId must be a valid UUID")
       .optional()
-      .transform((v) => (v === "" ? undefined : v)),
+      .transform((fieldValue) => (fieldValue === "" ? undefined : fieldValue)),
   })
   .strict();
 
@@ -88,11 +88,13 @@ export const UpdateProductSchema = z
   })
   .strict();
 
-export const ProductIdParamSchema = z
+export const ProductIdParameterSchema = z
   .object({
     id: z.string().uuid("id must be a valid UUID"),
   })
   .strict();
+
+export const ProductIdParamSchema = ProductIdParameterSchema;
 
 export const ListProductsQuerySchema = z
   .object({
@@ -102,8 +104,9 @@ export const ListProductsQuerySchema = z
     vendorId: z.string().uuid().optional(),
     inStock: z
       .enum(["true", "false"])
-      .transform((val) => val === "true")
+      .transform((stockStatusString) => stockStatusString === "true")
       .optional(),
     q: z.string().trim().max(100).optional(),
+    searchQuery: z.string().trim().max(100).optional(),
   })
   .strict();

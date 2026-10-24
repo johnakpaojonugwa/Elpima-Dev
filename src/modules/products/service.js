@@ -8,15 +8,15 @@ import { AppError } from "../../utils/AppError.js";
 /**
  * Create a new product in the vendor's catalog.
  *
- * @param {import("@prisma/client").PrismaClient} db
+ * @param {import("@prisma/client").PrismaClient} databaseClient
  * @param {string} vendorId
  * @param {object} input
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>} The created product
  */
-export async function createProduct(db, vendorId, input, actor) {
+export async function createProduct(databaseClient, vendorId, input, actor) {
   try {
-    const product = await db.product.create({
+    const product = await databaseClient.product.create({
       data: {
         vendorId,
         categoryId: input.categoryId ?? null,
@@ -46,7 +46,7 @@ export async function createProduct(db, vendorId, input, actor) {
       },
     });
 
-    await db.auditLog.create({
+    await databaseClient.auditLog.create({
       data: {
         organizationId: actor?.organizationId ?? vendorId,
         userId: actor?.id ?? null,
@@ -63,41 +63,42 @@ export async function createProduct(db, vendorId, input, actor) {
     });
 
     return product;
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      if (err.code === "P2003") {
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2003") {
         throw new AppError(400, "Referenced category or vendor does not exist");
       }
     }
-    throw err;
+    throw error;
   }
 }
 
 /**
  * List products across the platform with pagination and filtering.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {object} query Validated ListProductsQuerySchema
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {object} queryParameters Validated ListProductsQuerySchema
  * @returns {Promise<{ items: object[], nextCursor: string|null, limit: number }>}
  */
-export async function listProducts(db, query) {
-  const { cursor, limit = 20, categoryId, vendorId, inStock, q } = query;
+export async function listProducts(databaseClient, queryParameters) {
+  const { cursor, limit = 20, categoryId, vendorId, inStock } = queryParameters;
+  const searchQuery = queryParameters.searchQuery || queryParameters.q;
 
   const where = {
     ...(categoryId ? { categoryId } : {}),
     ...(vendorId ? { vendorId } : {}),
     ...(inStock !== undefined ? { inStock } : {}),
-    ...(q
+    ...(searchQuery
       ? {
           OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { sku: { contains: q, mode: "insensitive" } },
+            { name: { contains: searchQuery, mode: "insensitive" } },
+            { sku: { contains: searchQuery, mode: "insensitive" } },
           ],
         }
       : {}),
   };
 
-  const products = await db.product.findMany({
+  const products = await databaseClient.product.findMany({
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     where,
@@ -118,13 +119,13 @@ export async function listProducts(db, query) {
 /**
  * Retrieve a single product by ID.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} productId
  * @returns {Promise<object>}
  */
-export async function getProductById(db, id) {
-  const product = await db.product.findUnique({
-    where: { id },
+export async function getProductById(databaseClient, productId) {
+  const product = await databaseClient.product.findUnique({
+    where: { id: productId },
     include: {
       category: { select: { id: true, name: true } },
       vendor: {
@@ -150,16 +151,16 @@ export async function getProductById(db, id) {
 /**
  * Update an existing product. Only the owning vendor (or PLATFORM_ADMIN) may update.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} productId
  * @param {string} vendorId
  * @param {object} input Validated UpdateProductSchema
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>}
  */
-export async function updateProduct(db, id, vendorId, input, actor) {
-  const existing = await db.product.findUnique({
-    where: { id },
+export async function updateProduct(databaseClient, productId, vendorId, input, actor) {
+  const existing = await databaseClient.product.findUnique({
+    where: { id: productId },
     select: { id: true, vendorId: true },
   });
 
@@ -172,15 +173,15 @@ export async function updateProduct(db, id, vendorId, input, actor) {
   }
 
   try {
-    const product = await db.product.update({
-      where: { id },
+    const product = await databaseClient.product.update({
+      where: { id: productId },
       data: input,
       include: {
         category: { select: { id: true, name: true } },
       },
     });
 
-    await db.auditLog.create({
+    await databaseClient.auditLog.create({
       data: {
         organizationId: actor?.organizationId ?? vendorId,
         userId: actor?.id ?? null,
@@ -196,28 +197,28 @@ export async function updateProduct(db, id, vendorId, input, actor) {
     });
 
     return product;
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      if (err.code === "P2003") {
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2003") {
         throw new AppError(400, "Referenced category does not exist");
       }
     }
-    throw err;
+    throw error;
   }
 }
 
 /**
  * Delete a product. Only the owning vendor (or PLATFORM_ADMIN) may delete.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} productId
  * @param {string} vendorId
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<{ id: string }>}
  */
-export async function deleteProduct(db, id, vendorId, actor) {
-  const existing = await db.product.findUnique({
-    where: { id },
+export async function deleteProduct(databaseClient, productId, vendorId, actor) {
+  const existing = await databaseClient.product.findUnique({
+    where: { id: productId },
     select: { id: true, vendorId: true, name: true },
   });
 
@@ -230,21 +231,21 @@ export async function deleteProduct(db, id, vendorId, actor) {
   }
 
   try {
-    await db.product.delete({ where: { id } });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+    await databaseClient.product.delete({ where: { id: productId } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       throw new AppError(409, "Cannot delete product referenced in existing quotes or orders");
     }
-    throw err;
+    throw error;
   }
 
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId: actor?.organizationId ?? vendorId,
       userId: actor?.id ?? null,
       action: "delete",
       entityType: "product",
-      entityId: id,
+      entityId: productId,
       metadata: {
         deletedProductName: existing.name,
         actorRole: actor?.role ?? "ORG_ADMIN",
@@ -253,5 +254,5 @@ export async function deleteProduct(db, id, vendorId, actor) {
     select: { id: true },
   });
 
-  return { id };
+  return { id: productId };
 }

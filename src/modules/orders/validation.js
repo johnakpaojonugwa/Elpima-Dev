@@ -6,11 +6,13 @@ import { z } from "zod";
 
 const uuidSchema = z.string().uuid({ message: "id must be a valid UUID" });
 
-export const OrderIdParamSchema = z
+export const OrderIdParameterSchema = z
   .object({
     id: uuidSchema,
   })
   .strict();
+
+export const OrderIdParamSchema = OrderIdParameterSchema;
 
 export const ListOrdersQuerySchema = z
   .object({

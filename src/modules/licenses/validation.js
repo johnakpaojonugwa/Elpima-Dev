@@ -15,7 +15,7 @@ const uuidSchema = z.string().uuid({ message: "id must be a valid UUID" });
 
 export const CreateLicenseSchema = z
   .object({
-    organizationId: uuidSchema.optional(), // Can also be derived from req.user or route params
+    organizationId: uuidSchema.optional(), // Can also be derived from request.user or route params
     licenseNumber: z
       .string({ required_error: "licenseNumber is required" })
       .trim()
@@ -53,9 +53,9 @@ export const ReviewLicenseSchema = z
   })
   .strict()
   .refine(
-    (data) => {
-      if (data.status === "REJECTED") {
-        return typeof data.rejectionReason === "string" && data.rejectionReason.trim().length >= 3;
+    (reviewPayload) => {
+      if (reviewPayload.status === "REJECTED") {
+        return typeof reviewPayload.rejectionReason === "string" && reviewPayload.rejectionReason.trim().length >= 3;
       }
       return true;
     },
@@ -65,11 +65,13 @@ export const ReviewLicenseSchema = z
     },
   );
 
-export const LicenseIdParamSchema = z
+export const LicenseIdParameterSchema = z
   .object({
     id: uuidSchema,
   })
   .strict();
+
+export const LicenseIdParamSchema = LicenseIdParameterSchema;
 
 export const ListLicensesQuerySchema = z
   .object({

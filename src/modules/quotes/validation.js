@@ -39,11 +39,13 @@ export const UpdateQuoteStatusSchema = z
   })
   .strict();
 
-export const QuoteIdParamSchema = z
+export const QuoteIdParameterSchema = z
   .object({
     id: uuidSchema,
   })
   .strict();
+
+export const QuoteIdParamSchema = QuoteIdParameterSchema;
 
 export const ListQuotesQuerySchema = z
   .object({

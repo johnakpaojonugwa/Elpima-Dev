@@ -47,38 +47,38 @@ export const dbQueryDurationSeconds = new client.Histogram({
  * Express middleware to record HTTP metrics per request.
  * Normalizes parameterized paths (e.g. /api/v1/products/:id) to avoid high cardinality.
  */
-export function metricsMiddleware(req, res, next) {
+export function metricsMiddleware(request, response, next) {
   // Ignore /metrics scrapes from self-metrics to avoid feedback loops
-  if (req.path === "/metrics") {
+  if (request.path === "/metrics") {
     return next();
   }
 
   const startHrTime = process.hrtime.bigint();
 
-  res.on("finish", () => {
+  response.on("finish", () => {
     const endHrTime = process.hrtime.bigint();
     const durationInSeconds = Number(endHrTime - startHrTime) / 1e9;
 
     // Resolve route pattern if available from Express router layer,
     // otherwise fallback to a generic pattern to prevent label explosion.
-    let route = req.baseUrl || "";
-    if (req.route?.path) {
-      route += req.route.path === "/" && route.length > 0 ? "" : req.route.path;
+    let route = request.baseUrl || "";
+    if (request.route?.path) {
+      route += request.route.path === "/" && route.length > 0 ? "" : request.route.path;
     } else {
-      // In case route handler didn't attach req.route (e.g. 404s)
-      route = req.path || "unknown";
+      // In case route handler didn't attach request.route (e.g. 404s)
+      route = request.path || "unknown";
     }
 
     const labels = {
-      method: req.method,
+      method: request.method,
       route,
-      status_code: res.statusCode.toString(),
+      status_code: response.statusCode.toString(),
     };
 
     httpRequestDurationSeconds.observe(labels, durationInSeconds);
     httpRequestsTotal.inc(labels);
 
-    if (res.statusCode >= 400) {
+    if (response.statusCode >= 400) {
       httpErrorsTotal.inc(labels);
     }
   });

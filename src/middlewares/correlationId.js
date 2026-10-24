@@ -18,18 +18,18 @@ import { randomUUID } from "node:crypto";
  * (CR/LF in the value would otherwise let a client forge fake log
  * entries).
  */
-export function correlationId(req, res, next) {
-  const incoming = req.headers["x-request-id"];
+export function correlationId(request, response, next) {
+  const incoming = request.headers["x-request-id"];
   const value =
     typeof incoming === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(incoming)
       ? incoming
       : randomUUID();
 
-  req.correlationId = value;
+  request.correlationId = value;
   // Set the response header now, before any handler runs, so even a
   // short-circuited response (synchronous throw, 401, 404, 500) still
   // carries the ID.
-  res.setHeader("X-Request-Id", value);
+  response.setHeader("X-Request-Id", value);
 
   next();
 }

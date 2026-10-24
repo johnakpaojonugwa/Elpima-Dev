@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import { prisma } from "../../config/prisma.js";
 import {
+  OrderIdParameterSchema,
   OrderIdParamSchema,
   ListOrdersQuerySchema,
   UpdateOrderStatusSchema,
@@ -53,17 +54,17 @@ export const ordersRouter = Router();
  *       200:
  *         description: Paginated order list
  */
-ordersRouter.get("/", async (req, res, next) => {
+ordersRouter.get("/", async (request, response, next) => {
   try {
-    const query = ListOrdersQuerySchema.parse(req.query);
+    const queryParameters = ListOrdersQuerySchema.parse(request.query);
 
     const { items, nextCursor, limit } = await listOrders(
       prisma,
-      query,
-      req.user,
+      queryParameters,
+      request.user,
     );
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { orders: items },
       orders: items, // backward-compatible alias
@@ -72,11 +73,11 @@ ordersRouter.get("/", async (req, res, next) => {
           nextCursor,
           limit,
         },
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -101,22 +102,22 @@ ordersRouter.get("/", async (req, res, next) => {
  *       404:
  *         description: Order not found or unauthorized
  */
-ordersRouter.get("/:id", async (req, res, next) => {
+ordersRouter.get("/:id", async (request, response, next) => {
   try {
-    const { id } = OrderIdParamSchema.parse(req.params);
+    const { id: orderId } = OrderIdParameterSchema.parse(request.params);
 
-    const order = await getOrderById(prisma, id, req.user);
+    const order = await getOrderById(prisma, orderId, request.user);
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { order },
       order, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -154,28 +155,28 @@ ordersRouter.get("/:id", async (req, res, next) => {
  *       404:
  *         description: Order not found
  */
-ordersRouter.patch("/:id", async (req, res, next) => {
+ordersRouter.patch("/:id", async (request, response, next) => {
   try {
-    const { id } = OrderIdParamSchema.parse(req.params);
-    const { status } = UpdateOrderStatusSchema.parse(req.body);
+    const { id: orderId } = OrderIdParameterSchema.parse(request.params);
+    const { status } = UpdateOrderStatusSchema.parse(request.body);
 
-    const order = await updateOrderStatus(prisma, id, status, {
-      id: req.user.id ?? null,
-      supabaseUserId: req.user.supabaseUserId,
-      role: req.user.role,
-      organizationId: req.user.organizationId,
+    const order = await updateOrderStatus(prisma, orderId, status, {
+      id: request.user.id ?? null,
+      supabaseUserId: request.user.supabaseUserId,
+      role: request.user.role,
+      organizationId: request.user.organizationId,
     });
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { order },
       order, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -200,12 +201,12 @@ ordersRouter.patch("/:id", async (req, res, next) => {
  *       404:
  *         description: Order not found
  */
-ordersRouter.get("/:id/whatsapp-link", async (req, res, next) => {
+ordersRouter.get("/:id/whatsapp-link", async (request, response, next) => {
   try {
-    const { id } = OrderIdParamSchema.parse(req.params);
-    const order = await getOrderById(prisma, id, req.user);
+    const { id: orderId } = OrderIdParameterSchema.parse(request.params);
+    const order = await getOrderById(prisma, orderId, request.user);
 
-    const isCallerHospital = req.user.organizationId === order.hospitalId;
+    const isCallerHospital = request.user.organizationId === order.hospitalId;
     const recipientOrg = isCallerHospital ? order.quote.vendor : order.hospital;
 
     const message = formatOrderConfirmedWhatsAppMessage({
@@ -219,7 +220,7 @@ ordersRouter.get("/:id/whatsapp-link", async (req, res, next) => {
 
     const whatsappUrl = createWhatsAppChatLink(recipientOrg.phone, message);
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: {
         whatsappUrl,
@@ -227,10 +228,10 @@ ordersRouter.get("/:id/whatsapp-link", async (req, res, next) => {
         recipientPhone: recipientOrg.phone,
       },
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });

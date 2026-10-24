@@ -14,7 +14,7 @@ import { AppError } from "../../utils/AppError.js";
  *   originalName: string,
  *   mimeType: string,
  *   organizationId: string
- * }} params
+ * }} parameters
  * @returns {Promise<{ bucket: string, path: string, storagePath: string, signedUrl?: string }>}
  */
 export async function uploadLicenseDocument({
@@ -67,8 +67,8 @@ export async function uploadLicenseDocument({
       documentUrl: filePath,
       signedUrl: signedData?.signedUrl,
     };
-  } catch (err) {
-    if (err instanceof AppError) throw err;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
     if (env.NODE_ENV !== "production") {
       return {
         bucket,
@@ -78,7 +78,7 @@ export async function uploadLicenseDocument({
         signedUrl: `https://storage.elpima.local/${bucket}/${filePath}?token=simulated-preview-token`,
       };
     }
-    throw new AppError(500, `Failed to store document: ${err.message}`);
+    throw new AppError(500, `Failed to store document: ${error.message}`);
   }
 }
 
@@ -111,15 +111,15 @@ export async function createLicenseSignedUrl(storagePath, expiresInSeconds = 900
       signedUrl: data.signedUrl,
       expiresIn: expiresInSeconds,
     };
-  } catch (err) {
-    if (err instanceof AppError) throw err;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
     if (env.NODE_ENV !== "production") {
       return {
         signedUrl: `https://storage.elpima.local/${bucket}/${storagePath}?token=simulated-preview-token`,
         expiresIn: expiresInSeconds,
       };
     }
-    throw new AppError(500, `Storage error: ${err.message}`);
+    throw new AppError(500, `Storage error: ${error.message}`);
   }
 }
 
@@ -132,7 +132,7 @@ export async function createLicenseSignedUrl(storagePath, expiresInSeconds = 900
  *   originalName: string,
  *   mimeType: string,
  *   organizationId: string
- * }} params
+ * }} parameters
  * @returns {Promise<{ bucket: string, path: string, storagePath: string, imageUrl: string }>}
  */
 export async function uploadProductImage({
@@ -180,8 +180,8 @@ export async function uploadProductImage({
       storagePath: filePath,
       imageUrl: publicUrlData.publicUrl,
     };
-  } catch (err) {
-    if (err instanceof AppError) throw err;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
     if (env.NODE_ENV !== "production") {
       return {
         bucket,
@@ -190,6 +190,6 @@ export async function uploadProductImage({
         imageUrl: `https://storage.elpima.local/${bucket}/${filePath}`,
       };
     }
-    throw new AppError(500, `Failed to store product image: ${err.message}`);
+    throw new AppError(500, `Failed to store product image: ${error.message}`);
   }
 }

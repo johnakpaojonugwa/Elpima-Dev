@@ -4,6 +4,7 @@ import { prisma } from "../../config/prisma.js";
 import {
   CreateProductSchema,
   UpdateProductSchema,
+  ProductIdParameterSchema,
   ProductIdParamSchema,
   ListProductsQuerySchema,
 } from "./validation.js";
@@ -64,31 +65,31 @@ export const productsRouter = Router();
  *       403:
  *         description: Forbidden (HOSPITAL users cannot create products)
  */
-productsRouter.post("/", requireOrgType("VENDOR"), async (req, res, next) => {
+productsRouter.post("/", requireOrgType("VENDOR"), async (request, response, next) => {
   try {
-    const input = CreateProductSchema.parse(req.body);
+    const input = CreateProductSchema.parse(request.body);
 
     const product = await createProduct(
       prisma,
-      req.user.organizationId,
+      request.user.organizationId,
       input,
       {
-        role: req.user.role,
+        role: request.user.role,
         id: null,
-        organizationId: req.user.organizationId,
+        organizationId: request.user.organizationId,
       },
     );
 
-    res.status(201).json({
+    response.status(201).json({
       success: true,
       data: { product },
       product, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -124,13 +125,13 @@ productsRouter.post("/", requireOrgType("VENDOR"), async (req, res, next) => {
  *       200:
  *         description: Paginated product list
  */
-productsRouter.get("/", async (req, res, next) => {
+productsRouter.get("/", async (request, response, next) => {
   try {
-    const query = ListProductsQuerySchema.parse(req.query);
+    const queryParameters = ListProductsQuerySchema.parse(request.query);
 
-    const { items, nextCursor, limit } = await listProducts(prisma, query);
+    const { items, nextCursor, limit } = await listProducts(prisma, queryParameters);
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { products: items },
       products: items, // backward-compatible alias
@@ -139,11 +140,11 @@ productsRouter.get("/", async (req, res, next) => {
           nextCursor,
           limit,
         },
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -168,22 +169,22 @@ productsRouter.get("/", async (req, res, next) => {
  *       404:
  *         description: Product not found
  */
-productsRouter.get("/:id", async (req, res, next) => {
+productsRouter.get("/:id", async (request, response, next) => {
   try {
-    const { id } = ProductIdParamSchema.parse(req.params);
+    const { id: productId } = ProductIdParameterSchema.parse(request.params);
 
-    const product = await getProductById(prisma, id);
+    const product = await getProductById(prisma, productId);
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { product },
       product, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -221,33 +222,33 @@ productsRouter.get("/:id", async (req, res, next) => {
  *       404:
  *         description: Product not found or belongs to another vendor
  */
-productsRouter.patch("/:id", requireOrgType("VENDOR"), async (req, res, next) => {
+productsRouter.patch("/:id", requireOrgType("VENDOR"), async (request, response, next) => {
   try {
-    const { id } = ProductIdParamSchema.parse(req.params);
-    const input = UpdateProductSchema.parse(req.body);
+    const { id: productId } = ProductIdParameterSchema.parse(request.params);
+    const input = UpdateProductSchema.parse(request.body);
 
     const product = await updateProduct(
       prisma,
-      id,
-      req.user.organizationId,
+      productId,
+      request.user.organizationId,
       input,
       {
-        role: req.user.role,
+        role: request.user.role,
         id: null,
-        organizationId: req.user.organizationId,
+        organizationId: request.user.organizationId,
       },
     );
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { product },
       product, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -274,24 +275,24 @@ productsRouter.patch("/:id", requireOrgType("VENDOR"), async (req, res, next) =>
  *       409:
  *         description: Conflict (Product is referenced in existing quotes or orders)
  */
-productsRouter.delete("/:id", requireOrgType("VENDOR"), async (req, res, next) => {
+productsRouter.delete("/:id", requireOrgType("VENDOR"), async (request, response, next) => {
   try {
-    const { id } = ProductIdParamSchema.parse(req.params);
+    const { id: productId } = ProductIdParameterSchema.parse(request.params);
 
-    await deleteProduct(prisma, id, req.user.organizationId, {
-      role: req.user.role,
+    await deleteProduct(prisma, productId, request.user.organizationId, {
+      role: request.user.role,
       id: null,
-      organizationId: req.user.organizationId,
+      organizationId: request.user.organizationId,
     });
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { message: "Product deleted successfully" },
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });

@@ -20,8 +20,8 @@ export const healthRouter = Router();
  *             schema:
  *               $ref: '#/components/schemas/HealthResponse'
  */
-healthRouter.get("/live", (req, res) => {
-  res.status(200).json({
+healthRouter.get("/live", (request, response) => {
+  response.status(200).json({
     status: "ok",
     uptimeSeconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
@@ -42,26 +42,26 @@ healthRouter.get("/live", (req, res) => {
  *       503:
  *         description: Database is unreachable
  */
-async function checkReadiness(req, res) {
+async function checkReadiness(request, response) {
   const startedAt = Date.now();
 
   try {
     await prisma.$queryRaw`SELECT 1`;
     const dbLatencyMs = Date.now() - startedAt;
 
-    res.status(200).json({
+    response.status(200).json({
       status: "ok",
       uptimeSeconds: Math.round(process.uptime()),
       dbLatencyMs,
       timestamp: new Date().toISOString(),
     });
-  } catch (err) {
+  } catch (error) {
     logger.error("Readiness probe failed: database unreachable", {
-      error: err.message,
-      correlationId: req.correlationId,
+      error: error.message,
+      correlationId: request.correlationId,
     });
 
-    res.status(503).json({
+    response.status(503).json({
       status: "degraded",
       error: "Database unreachable",
       uptimeSeconds: Math.round(process.uptime()),

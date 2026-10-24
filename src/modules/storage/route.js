@@ -87,47 +87,47 @@ async function resolveOrgType(user) {
 storageRouter.post(
   "/licenses",
   upload.single("file"),
-  async (req, res, next) => {
+  async (request, response, next) => {
     try {
-      if (!req.file) {
+      if (!request.file) {
         throw new AppError(400, "No file uploaded. Please attach a file under the 'file' field.");
       }
 
-      if (!ALLOWED_LICENSE_TYPES.includes(req.file.mimetype)) {
+      if (!ALLOWED_LICENSE_TYPES.includes(request.file.mimetype)) {
         throw new AppError(
           400,
-          `Invalid file type '${req.file.mimetype}'. Allowed types: PDF, JPEG, PNG, WEBP.`
+          `Invalid file type '${request.file.mimetype}'. Allowed types: PDF, JPEG, PNG, WEBP.`
         );
       }
 
-      const isPlatformAdmin = req.user.role === "PLATFORM_ADMIN";
-      const orgType = await resolveOrgType(req.user);
+      const isPlatformAdmin = request.user.role === "PLATFORM_ADMIN";
+      const orgType = await resolveOrgType(request.user);
 
       if (!isPlatformAdmin && orgType !== "HOSPITAL") {
         throw new AppError(403, "Only hospital organizations can upload compliance licenses.");
       }
 
-      const organizationId = req.user.organizationId;
+      const organizationId = request.user.organizationId;
       if (!organizationId) {
         throw new AppError(400, "User must belong to an organization to upload documents.");
       }
 
       const result = await uploadLicenseDocument({
-        buffer: req.file.buffer,
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
+        buffer: request.file.buffer,
+        originalName: request.file.originalname,
+        mimeType: request.file.mimetype,
         organizationId,
       });
 
-      res.status(201).json({
+      response.status(201).json({
         success: true,
         data: result,
         meta: {
-          ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+          ...(request.correlationId ? { correlationId: request.correlationId } : {}),
         },
       });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   }
 );
@@ -156,12 +156,12 @@ storageRouter.post(
  *       403:
  *         description: Forbidden (cross-tenant access denied)
  */
-storageRouter.get("/licenses/signed-url", async (req, res, next) => {
+storageRouter.get("/licenses/signed-url", async (request, response, next) => {
   try {
-    const { path: storagePath, expiresIn } = SignedUrlQuerySchema.parse(req.query);
+    const { path: storagePath, expiresIn } = SignedUrlQuerySchema.parse(request.query);
 
-    const isPlatformAdmin = req.user.role === "PLATFORM_ADMIN";
-    const userOrgId = req.user.organizationId;
+    const isPlatformAdmin = request.user.role === "PLATFORM_ADMIN";
+    const userOrgId = request.user.organizationId;
 
     // Zero-trust tenant scoping: storage paths are prefixed with organizationId
     // (e.g. "<hospitalId>/<uuid>.pdf"). If caller is not platform admin, path must match caller org.
@@ -174,15 +174,15 @@ storageRouter.get("/licenses/signed-url", async (req, res, next) => {
 
     const result = await createLicenseSignedUrl(storagePath, expiresIn);
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: result,
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -219,47 +219,47 @@ storageRouter.get("/licenses/signed-url", async (req, res, next) => {
 storageRouter.post(
   "/products",
   upload.single("file"),
-  async (req, res, next) => {
+  async (request, response, next) => {
     try {
-      if (!req.file) {
+      if (!request.file) {
         throw new AppError(400, "No file uploaded. Please attach an image under the 'file' field.");
       }
 
-      if (!ALLOWED_PRODUCT_IMAGE_TYPES.includes(req.file.mimetype)) {
+      if (!ALLOWED_PRODUCT_IMAGE_TYPES.includes(request.file.mimetype)) {
         throw new AppError(
           400,
-          `Invalid file type '${req.file.mimetype}'. Allowed types: JPEG, PNG, WEBP.`
+          `Invalid file type '${request.file.mimetype}'. Allowed types: JPEG, PNG, WEBP.`
         );
       }
 
-      const isPlatformAdmin = req.user.role === "PLATFORM_ADMIN";
-      const orgType = await resolveOrgType(req.user);
+      const isPlatformAdmin = request.user.role === "PLATFORM_ADMIN";
+      const orgType = await resolveOrgType(request.user);
 
       if (!isPlatformAdmin && orgType !== "VENDOR") {
         throw new AppError(403, "Only vendor organizations can upload product catalog images.");
       }
 
-      const organizationId = req.user.organizationId;
+      const organizationId = request.user.organizationId;
       if (!organizationId) {
         throw new AppError(400, "User must belong to an organization to upload product images.");
       }
 
       const result = await uploadProductImage({
-        buffer: req.file.buffer,
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
+        buffer: request.file.buffer,
+        originalName: request.file.originalname,
+        mimeType: request.file.mimetype,
         organizationId,
       });
 
-      res.status(201).json({
+      response.status(201).json({
         success: true,
         data: result,
         meta: {
-          ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+          ...(request.correlationId ? { correlationId: request.correlationId } : {}),
         },
       });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   }
 );

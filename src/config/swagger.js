@@ -67,8 +67,8 @@ export const swaggerSpec = swaggerJsdoc(options);
  */
 export function setupSwagger(app) {
   // Mount raw JSON endpoint before swaggerUi.serve middleware so it doesn't intercept it
-  app.get("/api/v1/docs/openapi.json", (req, res) => {
-    res.json(swaggerSpec);
+  app.get("/api/v1/docs/openapi.json", (request, response) => {
+    response.json(swaggerSpec);
   });
 
   app.use(

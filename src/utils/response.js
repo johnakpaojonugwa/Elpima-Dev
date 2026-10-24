@@ -8,15 +8,15 @@
 /**
  * Send a standardized success JSON response.
  *
- * @param {import("express").Response} res
+ * @param {import("express").Response} response
  * @param {number} statusCode
  * @param {any} data
  * @param {object} [meta]
  */
-export function successResponse(res, statusCode, data, meta = {}) {
-  const correlationId = res.req?.correlationId;
+export function successResponse(response, statusCode, data, meta = {}) {
+  const correlationId = response.req?.correlationId;
 
-  return res.status(statusCode).json({
+  return response.status(statusCode).json({
     success: true,
     data,
     meta: {

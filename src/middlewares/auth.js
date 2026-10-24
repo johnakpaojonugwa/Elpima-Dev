@@ -35,9 +35,9 @@ function getJwksClient() {
 // 401 instead of 500 — the auth path always raises a JWT-shaped error.
 function verifyRs256WithJwks(token) {
   return new Promise((resolve, reject) => {
-    getJwksClient().getSigningKey(token, (jwksErr, jwksKey) => {
-      if (jwksErr) {
-        return reject(new jwt.JsonWebTokenError(jwksErr.message));
+    getJwksClient().getSigningKey(token, (jwksError, jwksKey) => {
+      if (jwksError) {
+        return reject(new jwt.JsonWebTokenError(jwksError.message));
       }
       jwt.verify(
         token,
@@ -48,8 +48,8 @@ function verifyRs256WithJwks(token) {
             ? { audience: env.SUPABASE_JWT_AUDIENCE }
             : {}),
         },
-        (verifyErr, payload) => {
-          if (verifyErr) return reject(verifyErr);
+        (verifyError, payload) => {
+          if (verifyError) return reject(verifyError);
           resolve(payload);
         },
       );
@@ -122,8 +122,8 @@ export async function verifySupabaseJwt(token, _secret) {
  * 401 "Authentication required"), so we don't have to re-classify
  * here.
  */
-export async function requireAuth(req, res, next) {
-  const header = req.headers.authorization ?? "";
+export async function requireAuth(request, response, next) {
+  const header = request.headers.authorization ?? "";
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) {
     return next(new AppError(401, "Authentication required"));
@@ -132,11 +132,11 @@ export async function requireAuth(req, res, next) {
   let payload;
   try {
     payload = await verifySupabaseJwt(match[1], env.SUPABASE_JWT_SECRET);
-  } catch (err) {
+  } catch (error) {
     // Re-throw so the errorHandler can pick the right message via
-    // err.name (TokenExpiredError vs JsonWebTokenError vs
+    // error.name (TokenExpiredError vs JsonWebTokenError vs
     // NotBeforeError). Wrapping in AppError would lose that signal.
-    return next(err);
+    return next(error);
   }
 
   // Custom-claim presence is the security boundary: a token without
@@ -152,7 +152,7 @@ export async function requireAuth(req, res, next) {
     );
   }
 
-  req.user = {
+  request.user = {
     supabaseUserId: payload.sub,
     organizationId: payload.organization_id,
     role: payload.role,
@@ -178,12 +178,12 @@ export async function requireAuth(req, res, next) {
  *
  * @param  {...string} allowed  The role(s) that may proceed.
  */
-export function requireRole(...allowed) {
-  return (req, _res, next) => {
-    if (!req.user) {
+export function requireRole(...allowedRoles) {
+  return (request, _response, next) => {
+    if (!request.user) {
       return next(new AppError(401, "Authentication required"));
     }
-    if (!allowed.includes(req.user.role)) {
+    if (!allowedRoles.includes(request.user.role)) {
       return next(new AppError(403, "Insufficient role"));
     }
     next();
@@ -215,15 +215,15 @@ export function requireRole(...allowed) {
  *
  * @param  {...string} allowed  The org type(s) that may proceed.
  */
-export function requireOrgType(...allowed) {
-  return async (req, _res, next) => {
-    if (!req.user) {
+export function requireOrgType(...allowedOrgTypes) {
+  return async (request, _response, next) => {
+    if (!request.user) {
       return next(new AppError(401, "Authentication required"));
     }
 
     // Fast path: claim present. Skip the DB lookup entirely.
-    if (req.user.organizationType) {
-      if (!allowed.includes(req.user.organizationType)) {
+    if (request.user.organizationType) {
+      if (!allowedOrgTypes.includes(request.user.organizationType)) {
         return next(new AppError(403, "Insufficient organization type"));
       }
       return next();
@@ -234,24 +234,24 @@ export function requireOrgType(...allowed) {
     // stale token's claim is still a valid authorization decision
     // until the token expires.
     try {
-      const org = await prisma.organization.findUnique({
-        where: { id: req.user.organizationId },
+      const organization = await prisma.organization.findUnique({
+        where: { id: request.user.organizationId },
         select: { type: true },
       });
 
-      if (!org) {
+      if (!organization) {
         return next(
           new AppError(401, "Authentication required"),
         );
       }
 
-      if (!allowed.includes(org.type)) {
+      if (!allowedOrgTypes.includes(organization.type)) {
         return next(new AppError(403, "Insufficient organization type"));
       }
 
       next();
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   };
 }

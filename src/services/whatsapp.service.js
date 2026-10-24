@@ -60,8 +60,8 @@ export function formatRfqWhatsAppMessage({
 
   if (items && items.length > 0) {
     message += `\n*Selected Items:*\n`;
-    items.slice(0, 5).forEach((item) => {
-      message += `• ${item.quantity}x ${item.name}\n`;
+    items.slice(0, 5).forEach((quoteItem) => {
+      message += `• ${quoteItem.quantity}x ${quoteItem.name}\n`;
     });
     if (items.length > 5) {
       message += `• ...and ${items.length - 5} more items\n`;

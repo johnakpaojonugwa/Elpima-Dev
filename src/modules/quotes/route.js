@@ -4,6 +4,7 @@ import { prisma, directPrisma } from "../../config/prisma.js";
 import {
   CreateQuoteSchema,
   UpdateQuoteStatusSchema,
+  QuoteIdParameterSchema,
   QuoteIdParamSchema,
   ListQuotesQuerySchema,
 } from "./validation.js";
@@ -70,32 +71,32 @@ export const quotesRouter = Router();
  *       403:
  *         description: Forbidden (Vendors cannot request quotes)
  */
-quotesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
+quotesRouter.post("/", requireOrgType("HOSPITAL"), async (request, response, next) => {
   try {
-    const input = CreateQuoteSchema.parse(req.body);
+    const input = CreateQuoteSchema.parse(request.body);
 
     const quote = await createQuote(
       directPrisma,
-      req.user.organizationId,
+      request.user.organizationId,
       input,
       {
-        id: req.user.id ?? null,
-        supabaseUserId: req.user.supabaseUserId,
-        role: req.user.role,
-        organizationId: req.user.organizationId,
+        id: request.user.id ?? null,
+        supabaseUserId: request.user.supabaseUserId,
+        role: request.user.role,
+        organizationId: request.user.organizationId,
       },
     );
 
-    res.status(201).json({
+    response.status(201).json({
       success: true,
       data: { quote },
       quote, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -123,17 +124,17 @@ quotesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
  *       200:
  *         description: Paginated quote list
  */
-quotesRouter.get("/", async (req, res, next) => {
+quotesRouter.get("/", async (request, response, next) => {
   try {
-    const query = ListQuotesQuerySchema.parse(req.query);
+    const queryParameters = ListQuotesQuerySchema.parse(request.query);
 
     const { items, nextCursor, limit } = await listQuotes(
       prisma,
-      query,
-      req.user,
+      queryParameters,
+      request.user,
     );
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { quotes: items },
       quotes: items, // backward-compatible alias
@@ -142,11 +143,11 @@ quotesRouter.get("/", async (req, res, next) => {
           nextCursor,
           limit,
         },
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -171,22 +172,22 @@ quotesRouter.get("/", async (req, res, next) => {
  *       404:
  *         description: Quote not found or unauthorized
  */
-quotesRouter.get("/:id", async (req, res, next) => {
+quotesRouter.get("/:id", async (request, response, next) => {
   try {
-    const { id } = QuoteIdParamSchema.parse(req.params);
+    const { id: quoteId } = QuoteIdParameterSchema.parse(request.params);
 
-    const quote = await getQuoteById(prisma, id, req.user);
+    const quote = await getQuoteById(prisma, quoteId, request.user);
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { quote },
       quote, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -224,33 +225,33 @@ quotesRouter.get("/:id", async (req, res, next) => {
  *       404:
  *         description: Quote not found
  */
-quotesRouter.patch("/:id", async (req, res, next) => {
+quotesRouter.patch("/:id", async (request, response, next) => {
   try {
-    const { id } = QuoteIdParamSchema.parse(req.params);
-    const { status } = UpdateQuoteStatusSchema.parse(req.body);
+    const { id: quoteId } = QuoteIdParameterSchema.parse(request.params);
+    const { status } = UpdateQuoteStatusSchema.parse(request.body);
 
     const quote = await updateQuoteStatus(
       directPrisma,
-      id,
+      quoteId,
       status,
       {
-        id: req.user.id ?? null,
-        supabaseUserId: req.user.supabaseUserId,
-        role: req.user.role,
-        organizationId: req.user.organizationId,
+        id: request.user.id ?? null,
+        supabaseUserId: request.user.supabaseUserId,
+        role: request.user.role,
+        organizationId: request.user.organizationId,
       },
     );
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { quote },
       quote, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -275,12 +276,12 @@ quotesRouter.patch("/:id", async (req, res, next) => {
  *       404:
  *         description: Quote not found
  */
-quotesRouter.get("/:id/whatsapp-link", async (req, res, next) => {
+quotesRouter.get("/:id/whatsapp-link", async (request, response, next) => {
   try {
-    const { id } = QuoteIdParamSchema.parse(req.params);
+    const { id: quoteId } = QuoteIdParameterSchema.parse(request.params);
 
     const quote = await prisma.quote.findUnique({
-      where: { id },
+      where: { id: quoteId },
       include: {
         hospital: { select: { id: true, name: true, phone: true } },
         vendor: { select: { id: true, name: true, phone: true } },
@@ -292,16 +293,16 @@ quotesRouter.get("/:id/whatsapp-link", async (req, res, next) => {
       throw new AppError(404, "Quote not found");
     }
 
-    const isPlatformAdmin = req.user.role === "PLATFORM_ADMIN";
+    const isPlatformAdmin = request.user.role === "PLATFORM_ADMIN";
     const isParticipant =
-      req.user.organizationId === quote.hospitalId ||
-      req.user.organizationId === quote.vendorId;
+      request.user.organizationId === quote.hospitalId ||
+      request.user.organizationId === quote.vendorId;
 
     if (!isPlatformAdmin && !isParticipant) {
       throw new AppError(404, "Quote not found");
     }
 
-    const isCallerHospital = req.user.organizationId === quote.hospitalId;
+    const isCallerHospital = request.user.organizationId === quote.hospitalId;
     const recipientOrg = isCallerHospital ? quote.vendor : quote.hospital;
 
     const message = formatRfqWhatsAppMessage({
@@ -312,9 +313,9 @@ quotesRouter.get("/:id/whatsapp-link", async (req, res, next) => {
       totalAmount: quote.totalAmount,
       currency: quote.currency,
       notes: quote.notes,
-      items: quote.items.map((i) => ({
-        name: i.product?.name || "Medical Item",
-        quantity: i.quantity,
+      items: quote.items.map((quoteItem) => ({
+        name: quoteItem.product?.name || "Medical Item",
+        quantity: quoteItem.quantity,
       })),
     });
 
@@ -328,7 +329,7 @@ quotesRouter.get("/:id/whatsapp-link", async (req, res, next) => {
       },
     });
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: {
         whatsappUrl,
@@ -337,10 +338,10 @@ quotesRouter.get("/:id/whatsapp-link", async (req, res, next) => {
         status: "SENT",
       },
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });

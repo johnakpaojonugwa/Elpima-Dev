@@ -24,14 +24,14 @@ export const metricsRouter = Router();
  *       401:
  *         description: Unauthorized when METRICS_TOKEN is configured and invalid
  */
-metricsRouter.get("/", async (req, res, next) => {
+metricsRouter.get("/", async (request, response, next) => {
   try {
     if (env.METRICS_TOKEN) {
-      const authHeader = req.headers.authorization;
+      const authHeader = request.headers.authorization;
       const expected = `Bearer ${env.METRICS_TOKEN}`;
 
       if (!authHeader || authHeader !== expected) {
-        return res.status(401).json({
+        return response.status(401).json({
           success: false,
           error: {
             message: "Unauthorized: Invalid or missing metrics token",
@@ -41,10 +41,10 @@ metricsRouter.get("/", async (req, res, next) => {
       }
     }
 
-    res.set("Content-Type", register.contentType);
+    response.set("Content-Type", register.contentType);
     const metricsData = await register.metrics();
-    res.status(200).send(metricsData);
-  } catch (err) {
-    next(err);
+    response.status(200).send(metricsData);
+  } catch (error) {
+    next(error);
   }
 });

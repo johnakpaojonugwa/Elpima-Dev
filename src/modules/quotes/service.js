@@ -22,22 +22,22 @@ import {
 /**
  * Create a new Quote / RFQ.
  *
- * @param {import("@prisma/client").PrismaClient} db
+ * @param {import("@prisma/client").PrismaClient} databaseClient
  * @param {string} hospitalId Hospital tenant ID
  * @param {object} input Validated CreateQuoteSchema
  * @param {{ id: string|null, role: string, organizationId: string|null, supabaseUserId?: string }} actor
  * @returns {Promise<object>} Created quote with items
  */
-export async function createQuote(db, hospitalId, input, actor) {
+export async function createQuote(databaseClient, hospitalId, input, actor) {
   const { vendorId, items, notes, expiresAt } = input;
 
   // 1. Verify hospital and vendor
   const [hospital, vendor] = await Promise.all([
-    db.organization.findUnique({
+    databaseClient.organization.findUnique({
       where: { id: hospitalId },
       select: { id: true, type: true, name: true, email: true },
     }),
-    db.organization.findUnique({
+    databaseClient.organization.findUnique({
       where: { id: vendorId },
       select: { id: true, type: true, name: true, email: true },
     }),
@@ -52,8 +52,8 @@ export async function createQuote(db, hospitalId, input, actor) {
   }
 
   // 2. Fetch products and verify ownership and pricing server-side
-  const productIds = items.map((i) => i.productId);
-  const products = await db.product.findMany({
+  const productIds = items.map((quoteItem) => quoteItem.productId);
+  const products = await databaseClient.product.findMany({
     where: { id: { in: productIds } },
     select: {
       id: true,
@@ -69,14 +69,14 @@ export async function createQuote(db, hospitalId, input, actor) {
     throw new AppError(400, "One or more requested products do not exist");
   }
 
-  const productMap = new Map(products.map((p) => [p.id, p]));
+  const productMap = new Map(products.map((product) => [product.id, product]));
 
   // 3. Compute item prices and total
   let totalAmount = new Prisma.Decimal(0);
   const quoteItemsData = [];
 
-  for (const item of items) {
-    const product = productMap.get(item.productId);
+  for (const quoteItem of items) {
+    const product = productMap.get(quoteItem.productId);
 
     if (product.vendorId !== vendorId) {
       throw new AppError(
@@ -85,7 +85,7 @@ export async function createQuote(db, hospitalId, input, actor) {
       );
     }
 
-    if (item.quantity < product.minOrderQty) {
+    if (quoteItem.quantity < product.minOrderQty) {
       throw new AppError(
         400,
         `Quantity for '${product.name}' must be at least minOrderQty (${product.minOrderQty})`,
@@ -93,20 +93,20 @@ export async function createQuote(db, hospitalId, input, actor) {
     }
 
     const unitPrice = product.unitPrice;
-    const lineTotal = unitPrice.mul(item.quantity);
+    const lineTotal = unitPrice.mul(quoteItem.quantity);
     totalAmount = totalAmount.add(lineTotal);
 
     quoteItemsData.push({
-      productId: item.productId,
-      quantity: item.quantity,
+      productId: quoteItem.productId,
+      quantity: quoteItem.quantity,
       unitPrice,
       lineTotal,
     });
   }
 
   // 4. Atomic transaction across quotes, quote_items, and audit_logs
-  const executeTransaction = async (tx) => {
-    const quote = await tx.quote.create({
+  const executeTransaction = async (transactionClient) => {
+    const quote = await transactionClient.quote.create({
       data: {
         hospitalId,
         vendorId,
@@ -136,7 +136,7 @@ export async function createQuote(db, hospitalId, input, actor) {
       },
     });
 
-    await tx.auditLog.create({
+    await transactionClient.auditLog.create({
       data: {
         organizationId: hospitalId,
         userId: actor?.id ?? null,
@@ -157,10 +157,13 @@ export async function createQuote(db, hospitalId, input, actor) {
   };
 
   let createdQuote;
-  if (typeof db.$transaction === "function") {
-    createdQuote = await db.$transaction(executeTransaction);
+  if (typeof databaseClient.$transaction === "function") {
+    createdQuote = await databaseClient.$transaction(executeTransaction, {
+      maxWait: 10000,
+      timeout: 20000,
+    });
   } else {
-    createdQuote = await executeTransaction(db);
+    createdQuote = await executeTransaction(databaseClient);
   }
 
   // Asynchronously dispatch transactional email alert to vendor
@@ -173,10 +176,10 @@ export async function createQuote(db, hospitalId, input, actor) {
       itemsCount: items.length,
       totalAmount: createdQuote.totalAmount,
       currency: createdQuote.currency,
-    }).catch((err) => {
+    }).catch((error) => {
       logger.warn("Failed to dispatch new quote alert email", {
         quoteId: createdQuote.id,
-        error: err.message,
+        error: error.message,
       });
     });
   }
@@ -187,13 +190,13 @@ export async function createQuote(db, hospitalId, input, actor) {
 /**
  * List quotes with dual-tenant scoping.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {object} query Validated ListQuotesQuerySchema
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {object} queryParameters Validated ListQuotesQuerySchema
  * @param {{ id: string|null, role: string, organizationId: string|null, organizationType?: string }} actor
  * @returns {Promise<{ items: object[], nextCursor: string|null, limit: number }>}
  */
-export async function listQuotes(db, query, actor) {
-  const { cursor, limit = 20, status, vendorId, hospitalId } = query;
+export async function listQuotes(databaseClient, queryParameters, actor) {
+  const { cursor, limit = 20, status, vendorId, hospitalId } = queryParameters;
 
   const isPlatformAdmin = actor?.role === "PLATFORM_ADMIN";
 
@@ -206,15 +209,15 @@ export async function listQuotes(db, query, actor) {
     if (hospitalId) where.hospitalId = hospitalId;
   } else {
     // Determine whether caller's org is acting as buyer (hospital) or seller (vendor)
-    const org = await db.organization.findUnique({
+    const organization = await databaseClient.organization.findUnique({
       where: { id: actor.organizationId },
       select: { type: true },
     });
 
-    if (org?.type === "HOSPITAL") {
+    if (organization?.type === "HOSPITAL") {
       where.hospitalId = actor.organizationId;
       if (vendorId) where.vendorId = vendorId;
-    } else if (org?.type === "VENDOR") {
+    } else if (organization?.type === "VENDOR") {
       where.vendorId = actor.organizationId;
       if (hospitalId) where.hospitalId = hospitalId;
     } else {
@@ -222,7 +225,7 @@ export async function listQuotes(db, query, actor) {
     }
   }
 
-  const quotes = await db.quote.findMany({
+  const quotes = await databaseClient.quote.findMany({
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     where,
@@ -252,14 +255,14 @@ export async function listQuotes(db, query, actor) {
 /**
  * Get quote details by ID with bi-tenant scoping and audit log.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id Quote UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} quoteId Quote UUID
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>}
  */
-export async function getQuoteById(db, id, actor) {
-  const quote = await db.quote.findUnique({
-    where: { id },
+export async function getQuoteById(databaseClient, quoteId, actor) {
+  const quote = await databaseClient.quote.findUnique({
+    where: { id: quoteId },
     include: {
       items: {
         include: {
@@ -295,13 +298,13 @@ export async function getQuoteById(db, id, actor) {
   }
 
   // Audit read
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId: actor.organizationId ?? quote.hospitalId,
       userId: actor?.id ?? null,
       action: "read",
       entityType: "quote",
-      entityId: id,
+      entityId: quoteId,
       metadata: {
         actorRole: actor?.role ?? "ORG_STAFF",
       },
@@ -316,15 +319,15 @@ export async function getQuoteById(db, id, actor) {
  * Update quote status (SENT, ACCEPTED, DECLINED).
  * If status transitions to ACCEPTED, generates the corresponding Order and OrderItems atomically.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id Quote UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} quoteId Quote UUID
  * @param {string} newStatus "SENT" | "ACCEPTED" | "DECLINED"
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>}
  */
-export async function updateQuoteStatus(db, id, newStatus, actor) {
-  const quote = await db.quote.findUnique({
-    where: { id },
+export async function updateQuoteStatus(databaseClient, quoteId, newStatus, actor) {
+  const quote = await databaseClient.quote.findUnique({
+    where: { id: quoteId },
     include: {
       items: true,
     },
@@ -361,23 +364,23 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
     throw new AppError(400, `Cannot ${newStatus.toLowerCase()} quote in ${quote.status} status; quote must be SENT or VIEWED`);
   }
 
-  const executeUpdate = async (tx) => {
+  const executeUpdate = async (transactionClient) => {
     let order = null;
 
     // If accepted, generate order and order_items
     if (newStatus === "ACCEPTED") {
-      order = await tx.order.create({
+      order = await transactionClient.order.create({
         data: {
           quoteId: quote.id,
           hospitalId: quote.hospitalId,
           status: "PENDING",
           totalAmount: quote.totalAmount,
           items: {
-            create: quote.items.map((item) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              lineTotal: item.lineTotal,
+            create: quote.items.map((quoteItem) => ({
+              productId: quoteItem.productId,
+              quantity: quoteItem.quantity,
+              unitPrice: quoteItem.unitPrice,
+              lineTotal: quoteItem.lineTotal,
             })),
           },
         },
@@ -387,8 +390,8 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
       });
     }
 
-    const updatedQuote = await tx.quote.update({
-      where: { id },
+    const updatedQuote = await transactionClient.quote.update({
+      where: { id: quoteId },
       data: { status: newStatus },
       include: {
         items: true,
@@ -398,13 +401,13 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
       },
     });
 
-    await tx.auditLog.create({
+    await transactionClient.auditLog.create({
       data: {
         organizationId: actor?.organizationId ?? quote.hospitalId,
         userId: actor?.id ?? null,
         action: "update_status",
         entityType: "quote",
-        entityId: id,
+        entityId: quoteId,
         metadata: {
           previousStatus: quote.status,
           newStatus,
@@ -419,10 +422,13 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
   };
 
   let result;
-  if (typeof db.$transaction === "function") {
-    result = await db.$transaction(executeUpdate);
+  if (typeof databaseClient.$transaction === "function") {
+    result = await databaseClient.$transaction(executeUpdate, {
+      maxWait: 10000,
+      timeout: 20000,
+    });
   } else {
-    result = await executeUpdate(db);
+    result = await executeUpdate(databaseClient);
   }
 
   // Asynchronously dispatch transactional alerts
@@ -434,10 +440,10 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
       quoteId: result.id,
       totalAmount: result.totalAmount,
       currency: result.currency,
-    }).catch((err) => {
+    }).catch((error) => {
       logger.warn("Failed to dispatch pricing ready email", {
         quoteId: result.id,
-        error: err.message,
+        error: error.message,
       });
     });
   } else if (newStatus === "ACCEPTED" && result?.vendor?.email && result?.order) {
@@ -448,10 +454,10 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
       orderId: result.order.id,
       totalAmount: result.order.totalAmount,
       currency: result.order.currency,
-    }).catch((err) => {
+    }).catch((error) => {
       logger.warn("Failed to dispatch order confirmed email", {
         orderId: result.order.id,
-        error: err.message,
+        error: error.message,
       });
     });
   }

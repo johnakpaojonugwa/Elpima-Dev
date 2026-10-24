@@ -41,7 +41,7 @@ import { sendWelcomeEmail } from "../../services/email.service.js";
  * Create an organization and its first admin user, with one
  * audit log row recording the create.
  *
- * @param {import("@prisma/client").PrismaClient} db
+ * @param {import("@prisma/client").PrismaClient} databaseClient
  *   A Prisma client. The route handler passes `prisma`; tests
  *   may pass any other client.
  * @param {{ name: string, type: "HOSPITAL"|"VENDOR", email: string,
@@ -60,7 +60,7 @@ import { sendWelcomeEmail } from "../../services/email.service.js";
  * @throws  Any other Prisma error is re-thrown; the global
  *          errorHandler classifies it as 500.
  */
-export async function createOrganization(db, input, actor) {
+export async function createOrganization(databaseClient, input, actor) {
   // Pre-generate the org id and the first user id so they're
   // available for the user and audit-log writes that follow.
   const { randomUUID } = await import("node:crypto");
@@ -69,12 +69,12 @@ export async function createOrganization(db, input, actor) {
   const placeholderSupabaseId = `pending-${organizationId}`;
 
   // Atomic transaction worker. All three operations run within
-  // the same transaction context (tx).
-  const executeWrites = async (tx) => {
+  // the same transaction context (transactionClient).
+  const executeWrites = async (transactionClient) => {
     // Step 1: create the organization.
     let organization;
     try {
-      organization = await tx.organization.create({
+      organization = await transactionClient.organization.create({
         data: {
           id: organizationId,
           name: input.name,
@@ -99,17 +99,17 @@ export async function createOrganization(db, input, actor) {
           updatedAt: true,
         },
       });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError) {
-        if (err.code === "P2002") {
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === "P2002") {
           throw new AppError(409, "An organization with that email already exists");
         }
       }
-      throw err;
+      throw error;
     }
 
     // Step 2: create the first admin user.
-    const user = await tx.user.create({
+    const user = await transactionClient.user.create({
       data: {
         id: userId,
         supabaseUserId: placeholderSupabaseId,
@@ -128,7 +128,7 @@ export async function createOrganization(db, input, actor) {
     });
 
     // Step 3: write the audit log row.
-    await tx.auditLog.create({
+    await transactionClient.auditLog.create({
       data: {
         organizationId: actor?.organizationId ?? organization.id,
         userId: actor?.id ?? null,
@@ -149,10 +149,13 @@ export async function createOrganization(db, input, actor) {
 
   let result;
   // Run atomically in a transaction when the client supports it
-  if (typeof db.$transaction === "function") {
-    result = await db.$transaction(executeWrites);
+  if (typeof databaseClient.$transaction === "function") {
+    result = await databaseClient.$transaction(executeWrites, {
+      maxWait: 10000,
+      timeout: 20000,
+    });
   } else {
-    result = await executeWrites(db);
+    result = await executeWrites(databaseClient);
   }
 
   // Asynchronously dispatch welcome email (fire-and-forget, never breaks onboarding flow)
@@ -161,10 +164,10 @@ export async function createOrganization(db, input, actor) {
       to: result.organization.email,
       organizationName: result.organization.name,
       contactName: result.organization.name,
-    }).catch((err) => {
+    }).catch((error) => {
       logger.warn("Failed to dispatch welcome email", {
         orgId: result.organization.id,
-        error: err.message,
+        error: error.message,
       });
     });
   }
@@ -175,15 +178,15 @@ export async function createOrganization(db, input, actor) {
 /**
  * Retrieve an organization by id and record an audit log entry.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id Organization UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} organizationId Organization UUID
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>} The organization object
  * @throws {AppError} 404 if not found
  */
-export async function getOrganizationById(db, id, actor) {
-  const organization = await db.organization.findUnique({
-    where: { id },
+export async function getOrganizationById(databaseClient, organizationId, actor) {
+  const organization = await databaseClient.organization.findUnique({
+    where: { id: organizationId },
     select: {
       id: true,
       name: true,
@@ -204,7 +207,7 @@ export async function getOrganizationById(db, id, actor) {
   }
 
   // Audit log entry for tracking access to medical/surgical procurement organizations
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId: actor?.organizationId ?? null,
       userId: actor?.id ?? null,
@@ -224,18 +227,18 @@ export async function getOrganizationById(db, id, actor) {
 /**
  * Update an organization's profile and record an audit log entry.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id Organization UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} organizationId Organization UUID
  * @param {object} input Validated UpdateOrganizationSchema data
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>} The updated organization object
  * @throws {AppError} 404 if not found
  * @throws {AppError} 409 if email conflict (P2002)
  */
-export async function updateOrganization(db, id, input, actor) {
+export async function updateOrganization(databaseClient, organizationId, input, actor) {
   try {
-    const organization = await db.organization.update({
-      where: { id },
+    const organization = await databaseClient.organization.update({
+      where: { id: organizationId },
       data: input,
       select: {
         id: true,
@@ -252,7 +255,7 @@ export async function updateOrganization(db, id, input, actor) {
       },
     });
 
-    await db.auditLog.create({
+    await databaseClient.auditLog.create({
       data: {
         organizationId: actor?.organizationId ?? null,
         userId: actor?.id ?? null,
@@ -268,16 +271,16 @@ export async function updateOrganization(db, id, input, actor) {
     });
 
     return organization;
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      if (err.code === "P2002") {
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2002") {
         throw new AppError(409, "An organization with that email already exists");
       }
-      if (err.code === "P2025") {
+      if (error.code === "P2025") {
         throw new AppError(404, "Organization not found");
       }
     }
-    throw err;
+    throw error;
   }
 }
 

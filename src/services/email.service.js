@@ -43,13 +43,13 @@ async function sendEmail({ to, subject, html, text }) {
     });
 
     return { success: true, id: response.data?.id };
-  } catch (err) {
+  } catch (error) {
     logger.error("Unexpected error in email dispatch", {
       to,
       subject,
-      error: err.message,
+      error: error.message,
     });
-    return { success: false, error: err.message };
+    return { success: false, error: error.message };
   }
 }
 

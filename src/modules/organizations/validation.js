@@ -77,7 +77,7 @@ function optionalText(maxLength) {
     .trim()
     .max(maxLength, `must be ${maxLength} characters or fewer`)
     .optional()
-    .transform((v) => (v === undefined || v === "" ? undefined : v));
+    .transform((fieldValue) => (fieldValue === undefined || fieldValue === "" ? undefined : fieldValue));
 }
 
 // -- Public schemas ---------------------------------------------------
@@ -101,7 +101,7 @@ export const CreateOrganizationSchema = z
     status: OrgStatusEnum.optional(),
   })
   .strict()
-  .transform((v) => ({ ...v, status: "PENDING_VERIFICATION" }));
+  .transform((payload) => ({ ...payload, status: "PENDING_VERIFICATION" }));
 
 // Update schema: every field optional. `type` and `status` are
 // deliberately absent — type is immutable for a tenant, and status
@@ -123,8 +123,10 @@ export const UpdateOrganizationSchema = z
 
 // UUID-only path parameter. The `id` is the public UUID; the
 // server never accepts a tenant's slug or a numeric id.
-export const OrganizationIdParamSchema = z
+export const OrganizationIdParameterSchema = z
   .object({
     id: z.string().uuid(),
   })
   .strict();
+
+export const OrganizationIdParamSchema = OrganizationIdParameterSchema;

@@ -9,7 +9,7 @@ const devFormat = combine(
   errors({ stack: true }),
   printf((info) => {
     const {
-      timestamp: ts,
+      timestamp: logTimestamp,
       level,
       message,
       stack,
@@ -24,7 +24,7 @@ const devFormat = combine(
       correlationId && method
         ? ` ${method} ${url} ${status} ${durationMs}ms [${correlationId}]`
         : "";
-    return `${ts} ${level}: ${summary}${accessLine}`;
+    return `${logTimestamp} ${level}: ${summary}${accessLine}`;
   }),
 );
 
@@ -50,7 +50,7 @@ export const morganStream = {
   write(line) {
     try {
       const record = JSON.parse(line);
-      logger.info(record.msg ?? "http_request", record);
+      logger.info(record.message ?? record.msg ?? "http_request", record);
     } catch {
       logger.info(line.trim());
     }

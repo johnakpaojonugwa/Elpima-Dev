@@ -19,19 +19,20 @@ import { idempotency } from './middlewares/idempotency.js';
 // off it and forward them to winston. The fields are the only
 // things logged — request body, query, and headers are deliberately
 // omitted to avoid leaking PHI/PII.
-function jsonAccessLog(tokens, req, res) {
-  const userId = req.user?.supabaseUserId;
-  const organizationId = req.user?.organizationId;
+function jsonAccessLog(tokens, request, response) {
+  const userId = request.user?.supabaseUserId;
+  const organizationId = request.user?.organizationId;
   return JSON.stringify({
+    message: "http_request",
     msg: "http_request",
-    correlationId: req.correlationId,
-    method: tokens.method(req, res),
-    url: tokens.url(req, res),
-    status: Number(tokens.status(req, res)),
-    durationMs: Number(tokens["response-time"](req, res)),
+    correlationId: request.correlationId,
+    method: tokens.method(request, response),
+    url: tokens.url(request, response),
+    status: Number(tokens.status(request, response)),
+    durationMs: Number(tokens["response-time"](request, response)),
     userId,
     organizationId,
-    ip: tokens["remote-addr"](req, res),
+    ip: tokens["remote-addr"](request, response),
   });
 }
 

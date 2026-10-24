@@ -4,6 +4,7 @@ import { prisma } from "../../config/prisma.js";
 import {
   CreateLicenseSchema,
   ReviewLicenseSchema,
+  LicenseIdParameterSchema,
   LicenseIdParamSchema,
   ListLicensesQuerySchema,
 } from "./validation.js";
@@ -59,32 +60,32 @@ export const licensesRouter = Router();
  *       403:
  *         description: Forbidden (Vendors cannot submit hospital licenses)
  */
-licensesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
+licensesRouter.post("/", requireOrgType("HOSPITAL"), async (request, response, next) => {
   try {
-    const input = CreateLicenseSchema.parse(req.body);
+    const input = CreateLicenseSchema.parse(request.body);
 
     const license = await createLicense(
       prisma,
-      req.user.organizationId,
+      request.user.organizationId,
       input,
       {
-        id: req.user.id ?? null,
-        supabaseUserId: req.user.supabaseUserId,
-        role: req.user.role,
-        organizationId: req.user.organizationId,
+        id: request.user.id ?? null,
+        supabaseUserId: request.user.supabaseUserId,
+        role: request.user.role,
+        organizationId: request.user.organizationId,
       },
     );
 
-    res.status(201).json({
+    response.status(201).json({
       success: true,
       data: { license },
       license, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -116,17 +117,17 @@ licensesRouter.post("/", requireOrgType("HOSPITAL"), async (req, res, next) => {
  *       200:
  *         description: Paginated license list
  */
-licensesRouter.get("/", async (req, res, next) => {
+licensesRouter.get("/", async (request, response, next) => {
   try {
-    const query = ListLicensesQuerySchema.parse(req.query);
+    const queryParameters = ListLicensesQuerySchema.parse(request.query);
 
     const { items, nextCursor, limit } = await listLicenses(
       prisma,
-      query,
-      req.user,
+      queryParameters,
+      request.user,
     );
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { licenses: items },
       licenses: items, // backward-compatible alias
@@ -135,11 +136,11 @@ licensesRouter.get("/", async (req, res, next) => {
           nextCursor,
           limit,
         },
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -164,22 +165,22 @@ licensesRouter.get("/", async (req, res, next) => {
  *       404:
  *         description: License not found or access denied
  */
-licensesRouter.get("/:id", async (req, res, next) => {
+licensesRouter.get("/:id", async (request, response, next) => {
   try {
-    const { id } = LicenseIdParamSchema.parse(req.params);
+    const { id: licenseId } = LicenseIdParameterSchema.parse(request.params);
 
-    const license = await getLicenseById(prisma, id, req.user);
+    const license = await getLicenseById(prisma, licenseId, request.user);
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { license },
       license, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -221,28 +222,28 @@ licensesRouter.get("/:id", async (req, res, next) => {
 licensesRouter.patch(
   "/:id",
   requireRole("PLATFORM_ADMIN"),
-  async (req, res, next) => {
+  async (request, response, next) => {
     try {
-      const { id } = LicenseIdParamSchema.parse(req.params);
-      const input = ReviewLicenseSchema.parse(req.body);
+      const { id: licenseId } = LicenseIdParameterSchema.parse(request.params);
+      const input = ReviewLicenseSchema.parse(request.body);
 
-      const license = await reviewLicense(prisma, id, input, {
-        id: req.user.id ?? null,
-        supabaseUserId: req.user.supabaseUserId,
-        role: req.user.role,
-        organizationId: req.user.organizationId,
+      const license = await reviewLicense(prisma, licenseId, input, {
+        id: request.user.id ?? null,
+        supabaseUserId: request.user.supabaseUserId,
+        role: request.user.role,
+        organizationId: request.user.organizationId,
       });
 
-      res.status(200).json({
+      response.status(200).json({
         success: true,
         data: { license },
         license, // backward-compatible alias
         meta: {
-          ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+          ...(request.correlationId ? { correlationId: request.correlationId } : {}),
         },
       });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   },
 );

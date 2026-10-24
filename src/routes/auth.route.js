@@ -4,7 +4,7 @@ import { requireAuth } from "../middlewares/auth.js";
 import { authRateLimit } from "../middlewares/rateLimitAuth.js";
 
 // Example route that demonstrates the full auth chain end-to-end:
-// `requireAuth` verifies the bearer token and populates `req.user`;
+// `requireAuth` verifies the bearer token and populates `request.user`;
 // the handler returns it as JSON. The frontend uses this to confirm
 // the access token is still valid and to learn the user's
 // organizationId / role (the same fields RLS reads from the JWT).
@@ -48,13 +48,13 @@ export const authRouter = Router();
  *       401:
  *         description: Missing, invalid, or expired JWT token
  */
-authRouter.get("/me", authRateLimit, requireAuth, (req, res) => {
-  res.json({
+authRouter.get("/me", authRateLimit, requireAuth, (request, response) => {
+  response.json({
     success: true,
-    data: { user: req.user },
-    user: req.user, // backward-compatible alias
+    data: { user: request.user },
+    user: request.user, // backward-compatible alias
     meta: {
-      ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+      ...(request.correlationId ? { correlationId: request.correlationId } : {}),
     },
   });
 });

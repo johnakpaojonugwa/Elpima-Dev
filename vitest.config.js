@@ -15,6 +15,7 @@ export default defineConfig({
   test: {
     environment: "node",
     passWithNoTests: true,
+    fileParallelism: false,
     setupFiles: ["./test/setup.js"],
     include: ["test/**/*.test.js", "src/**/*.test.js"],
   },

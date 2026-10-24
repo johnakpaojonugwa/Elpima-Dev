@@ -40,3 +40,36 @@ if (!process.env.SUPABASE_JWT_SECRET) {
 // JWKS paths set them per-test (and clear them in afterEach).
 delete process.env.SUPABASE_JWT_AUDIENCE;
 delete process.env.SUPABASE_JWKS_URL;
+
+// Ensure reliable DNS resolution for remote Supabase host across developer environments
+import dns from "node:dns";
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]);
+  const originalDnsLookup = dns.lookup;
+  dns.lookup = function (hostname, lookupOptions, lookupCallback) {
+    let callbackFunction = lookupCallback;
+    let effectiveOptions = lookupOptions;
+    if (typeof effectiveOptions === "function") {
+      callbackFunction = effectiveOptions;
+      effectiveOptions = {};
+    }
+    if (hostname === "aws-1-eu-central-1.pooler.supabase.com") {
+      dns.resolve4(hostname, (dnsResolveError, resolvedIpAddresses) => {
+        if (dnsResolveError || !resolvedIpAddresses || resolvedIpAddresses.length === 0) {
+          return originalDnsLookup(hostname, effectiveOptions, callbackFunction);
+        }
+        if (effectiveOptions && effectiveOptions.all) {
+          return callbackFunction(
+            null,
+            resolvedIpAddresses.map((ipAddress) => ({ address: ipAddress, family: 4 })),
+          );
+        }
+        return callbackFunction(null, resolvedIpAddresses[0], 4);
+      });
+      return;
+    }
+    return originalDnsLookup(hostname, effectiveOptions, callbackFunction);
+  };
+} catch {
+  // Gracefully fallback to OS default if setServers is unavailable
+}

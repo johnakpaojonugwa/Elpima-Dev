@@ -16,28 +16,28 @@ import { sendLicenseReviewAlert } from "../../services/email.service.js";
 /**
  * Submit a new hospital license for verification.
  *
- * @param {import("@prisma/client").PrismaClient} db
+ * @param {import("@prisma/client").PrismaClient} databaseClient
  * @param {string} organizationId Hospital tenant ID
  * @param {object} input Validated CreateLicenseSchema
  * @param {{ id: string|null, role: string, organizationId: string|null, supabaseUserId?: string }} actor
  * @returns {Promise<object>} Created license record
  */
-export async function createLicense(db, organizationId, input, actor) {
+export async function createLicense(databaseClient, organizationId, input, actor) {
   // Verify target organization exists and is a HOSPITAL
-  const org = await db.organization.findUnique({
+  const organization = await databaseClient.organization.findUnique({
     where: { id: organizationId },
     select: { id: true, type: true },
   });
 
-  if (!org) {
+  if (!organization) {
     throw new AppError(404, "Organization not found");
   }
 
-  if (org.type !== "HOSPITAL") {
+  if (organization.type !== "HOSPITAL") {
     throw new AppError(400, "Licenses can only be submitted for hospital organizations");
   }
 
-  const license = await db.license.create({
+  const license = await databaseClient.license.create({
     data: {
       organizationId,
       licenseNumber: input.licenseNumber,
@@ -59,7 +59,7 @@ export async function createLicense(db, organizationId, input, actor) {
     },
   });
 
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId,
       userId: actor?.id ?? null,
@@ -81,13 +81,13 @@ export async function createLicense(db, organizationId, input, actor) {
 /**
  * List licenses with tenant isolation and status filters.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {object} query Validated ListLicensesQuerySchema
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {object} queryParameters Validated ListLicensesQuerySchema
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<{ items: object[], nextCursor: string|null, limit: number }>}
  */
-export async function listLicenses(db, query, actor) {
-  const { cursor, limit = 20, organizationId, status } = query;
+export async function listLicenses(databaseClient, queryParameters, actor) {
+  const { cursor, limit = 20, organizationId, status } = queryParameters;
 
   const isPlatformAdmin = actor?.role === "PLATFORM_ADMIN";
 
@@ -107,7 +107,7 @@ export async function listLicenses(db, query, actor) {
     ...(status ? { status } : {}),
   };
 
-  const licenses = await db.license.findMany({
+  const licenses = await databaseClient.license.findMany({
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     where,
@@ -146,14 +146,14 @@ export async function listLicenses(db, query, actor) {
 /**
  * Retrieve license details by ID with tenant guard and audit log.
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id License UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} licenseId License UUID
  * @param {{ id: string|null, role: string, organizationId: string|null }} actor
  * @returns {Promise<object>} License record
  */
-export async function getLicenseById(db, id, actor) {
-  const license = await db.license.findUnique({
-    where: { id },
+export async function getLicenseById(databaseClient, licenseId, actor) {
+  const license = await databaseClient.license.findUnique({
+    where: { id: licenseId },
     include: {
       organization: {
         select: {
@@ -177,7 +177,7 @@ export async function getLicenseById(db, id, actor) {
   }
 
   // Audit read for medical compliance
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId: license.organizationId,
       userId: actor?.id ?? null,
@@ -197,15 +197,15 @@ export async function getLicenseById(db, id, actor) {
 /**
  * Review a hospital license (PLATFORM_ADMIN only).
  *
- * @param {import("@prisma/client").PrismaClient} db
- * @param {string} id License UUID
+ * @param {import("@prisma/client").PrismaClient} databaseClient
+ * @param {string} licenseId License UUID
  * @param {object} input Validated ReviewLicenseSchema
  * @param {{ id: string|null, role: string, organizationId: string|null, supabaseUserId?: string }} actor
  * @returns {Promise<object>} Updated license record
  */
-export async function reviewLicense(db, id, input, actor) {
-  const license = await db.license.findUnique({
-    where: { id },
+export async function reviewLicense(databaseClient, licenseId, input, actor) {
+  const license = await databaseClient.license.findUnique({
+    where: { id: licenseId },
     select: {
       id: true,
       organizationId: true,
@@ -224,8 +224,8 @@ export async function reviewLicense(db, id, input, actor) {
 
   const reviewerId = actor?.supabaseUserId ?? actor?.id ?? "PLATFORM_ADMIN";
 
-  const updated = await db.license.update({
-    where: { id },
+  const updated = await databaseClient.license.update({
+    where: { id: licenseId },
     data: {
       status: input.status,
       reviewedBy: reviewerId,
@@ -248,13 +248,13 @@ export async function reviewLicense(db, id, input, actor) {
     },
   });
 
-  await db.auditLog.create({
+  await databaseClient.auditLog.create({
     data: {
       organizationId: license.organizationId,
       userId: actor?.id ?? null,
       action: "review",
       entityType: "license",
-      entityId: id,
+      entityId: licenseId,
       metadata: {
         previousStatus: license.status,
         newStatus: input.status,
@@ -272,10 +272,10 @@ export async function reviewLicense(db, id, input, actor) {
       hospitalName: license.organization.name,
       status: input.status,
       rejectionReason: input.rejectionReason,
-    }).catch((err) => {
+    }).catch((error) => {
       logger.warn("Failed to dispatch license review email", {
-        licenseId: id,
-        error: err.message,
+        licenseId,
+        error: error.message,
       });
     });
   }

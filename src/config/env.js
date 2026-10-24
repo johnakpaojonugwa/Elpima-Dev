@@ -73,27 +73,27 @@ const envSchema = z.object({
   CORS_ORIGIN: z
     .string()
     .default("*")
-    .transform((raw) => {
-      const items = raw
+    .transform((rawOrigins) => {
+      const originItems = rawOrigins
         .split(",")
-        .map((s) => s.trim())
+        .map((singleOrigin) => singleOrigin.trim())
         .filter(Boolean);
       // Keep "*" as the wildcard so cors() handles credentials correctly
       // (it rejects origin:"*" + credentials:true).
-      if (items.length === 0 || (items.length === 1 && items[0] === "*")) {
+      if (originItems.length === 0 || (originItems.length === 1 && originItems[0] === "*")) {
         return "*";
       }
-      return items;
+      return originItems;
     }),
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsedEnvironment = envSchema.safeParse(process.env);
 
-if (!parsed.success) {
+if (!parsedEnvironment.success) {
   console.error("❌ Invalid environment configuration:");
-  console.error(parsed.error.flatten().fieldErrors);
+  console.error(parsedEnvironment.error.flatten().fieldErrors);
   process.exit(1);
 }
 
-export const env = parsed.data;
+export const env = parsedEnvironment.data;
 export const isProd = env.NODE_ENV === "production";

@@ -4,6 +4,7 @@ import { prisma, directPrisma } from "../../config/prisma.js";
 import {
   CreateOrganizationSchema,
   UpdateOrganizationSchema,
+  OrganizationIdParameterSchema,
   OrganizationIdParamSchema,
 } from "./validation.js";
 import {
@@ -23,7 +24,7 @@ import { AppError } from "../../utils/AppError.js";
 //
 // Role gates:
 //   - POST /: PLATFORM_ADMIN only (registers a new tenant)
-//   - GET /:id: Caller can read own org (scoped by req.user.organizationId);
+//   - GET /:id: Caller can read own org (scoped by request.user.organizationId);
 //               PLATFORM_ADMIN can read any org. Cross-tenant reads return 404.
 //   - PATCH /:id: ORG_ADMIN can update own org; PLATFORM_ADMIN can update any org.
 //                 Cross-tenant updates return 404.
@@ -62,9 +63,9 @@ export const organizationsRouter = Router();
  *       403:
  *         description: Forbidden (insufficient permissions)
  */
-organizationsRouter.post("/", requireRole("PLATFORM_ADMIN"), async (req, res, next) => {
+organizationsRouter.post("/", requireRole("PLATFORM_ADMIN"), async (request, response, next) => {
   try {
-    const input = CreateOrganizationSchema.parse(req.body);
+    const input = CreateOrganizationSchema.parse(request.body);
 
     const { organization, user } = await createOrganization(
       // Uses unpooled directPrisma client to guarantee atomic rollback
@@ -72,23 +73,23 @@ organizationsRouter.post("/", requireRole("PLATFORM_ADMIN"), async (req, res, ne
       directPrisma,
       input,
       {
-        role: req.user?.role ?? "PLATFORM_ADMIN",
+        role: request.user?.role ?? "PLATFORM_ADMIN",
         id: null,
-        organizationId: req.user?.organizationId ?? null,
+        organizationId: request.user?.organizationId ?? null,
       },
     );
 
-    res.status(201).json({
+    response.status(201).json({
       success: true,
       data: { organization, user },
       organization, // backward-compatible alias
       user,         // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -115,34 +116,34 @@ organizationsRouter.post("/", requireRole("PLATFORM_ADMIN"), async (req, res, ne
  *       404:
  *         description: Organization not found or cross-tenant access denied
  */
-organizationsRouter.get("/:id", async (req, res, next) => {
+organizationsRouter.get("/:id", async (request, response, next) => {
   try {
-    const { id } = OrganizationIdParamSchema.parse(req.params);
+    const { id: organizationId } = OrganizationIdParameterSchema.parse(request.params);
 
     // Multi-tenant boundary: verify caller has authority to read this tenant
-    const isPlatformAdmin = req.user?.role === "PLATFORM_ADMIN";
-    const isOwnOrg = req.user?.organizationId === id;
+    const isPlatformAdmin = request.user?.role === "PLATFORM_ADMIN";
+    const isOwnOrg = request.user?.organizationId === organizationId;
 
     if (!isPlatformAdmin && !isOwnOrg) {
       throw new AppError(404, "Organization not found");
     }
 
-    const organization = await getOrganizationById(prisma, id, {
-      role: req.user?.role ?? "ORG_STAFF",
+    const organization = await getOrganizationById(prisma, organizationId, {
+      role: request.user?.role ?? "ORG_STAFF",
       id: null,
-      organizationId: req.user?.organizationId ?? null,
+      organizationId: request.user?.organizationId ?? null,
     });
 
-    res.status(200).json({
+    response.status(200).json({
       success: true,
       data: { organization },
       organization, // backward-compatible alias
       meta: {
-        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+        ...(request.correlationId ? { correlationId: request.correlationId } : {}),
       },
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -183,35 +184,35 @@ organizationsRouter.get("/:id", async (req, res, next) => {
 organizationsRouter.patch(
   "/:id",
   requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
-  async (req, res, next) => {
+  async (request, response, next) => {
     try {
-      const { id } = OrganizationIdParamSchema.parse(req.params);
+      const { id: organizationId } = OrganizationIdParameterSchema.parse(request.params);
 
-      const isPlatformAdmin = req.user?.role === "PLATFORM_ADMIN";
-      const isOwnOrg = req.user?.organizationId === id;
+      const isPlatformAdmin = request.user?.role === "PLATFORM_ADMIN";
+      const isOwnOrg = request.user?.organizationId === organizationId;
 
       if (!isPlatformAdmin && !isOwnOrg) {
         throw new AppError(404, "Organization not found");
       }
 
-      const input = UpdateOrganizationSchema.parse(req.body);
+      const input = UpdateOrganizationSchema.parse(request.body);
 
-      const organization = await updateOrganization(prisma, id, input, {
-        role: req.user?.role ?? "ORG_ADMIN",
+      const organization = await updateOrganization(prisma, organizationId, input, {
+        role: request.user?.role ?? "ORG_ADMIN",
         id: null,
-        organizationId: req.user?.organizationId ?? null,
+        organizationId: request.user?.organizationId ?? null,
       });
 
-      res.status(200).json({
+      response.status(200).json({
         success: true,
         data: { organization },
         organization, // backward-compatible alias
         meta: {
-          ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+          ...(request.correlationId ? { correlationId: request.correlationId } : {}),
         },
       });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   },
 );
