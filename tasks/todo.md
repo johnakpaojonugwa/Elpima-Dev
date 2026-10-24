@@ -642,15 +642,15 @@ The most compliance-heavy slice. Plan accordingly.
 - [ ] Size: S
 
 ### T6.2 — Tag v1.0.0
-- [ ] Description: `git tag -a v1.0.0 -m "Release 1.0.0"`. Push the
+- [x] Description: `git tag -a v1.0.0 -m "Release 1.0.0"`. Push the
   tag. Verify image build.
-- [ ] Acceptance:
-  - [ ] Tag pushed
-  - [ ] Tag-triggered build produces an image
-  - [ ] Image tagged with the version
-- [ ] Verification: tag is visible on the remote
-- [ ] Dependencies: T6.1
-- [ ] Files: git tag; release pipeline output
+- [x] Acceptance:
+  - [x] Tag pushed
+  - [x] Tag-triggered build produces an image
+  - [x] Image tagged with the version
+- [x] Verification: tag is visible on the remote
+- [x] Dependencies: T6.1
+- [x] Files: git tag; release pipeline output
 - [ ] Size: S
 
 ### T6.3 — Pre-launch checklist signoff
