@@ -5,6 +5,8 @@ import { requireAuth, requireRole } from "../middlewares/auth.js";
 import { organizationsRouter } from "../modules/organizations/route.js";
 import { productsRouter } from "../modules/products/route.js";
 import { licensesRouter } from "../modules/licenses/route.js";
+import { quotesRouter } from "../modules/quotes/route.js";
+import { ordersRouter } from "../modules/orders/route.js";
 
 export const router = Router();
 
@@ -49,4 +51,22 @@ router.use(
   "/api/v1/licenses",
   requireAuth,
   licensesRouter,
+);
+
+// Quotes: RFQs, pricing negotiation, and procurement order generation.
+// All routes require authentication. Creation (POST) requires HOSPITAL role;
+// status transitions enforce vendor send and hospital accept/decline authority.
+router.use(
+  "/api/v1/quotes",
+  requireAuth,
+  quotesRouter,
+);
+
+// Orders: Purchase order tracking, fulfillment, and status transitions.
+// All routes require authentication. Access is bi-tenant isolated between
+// purchasing hospital and supplying vendor.
+router.use(
+  "/api/v1/orders",
+  requireAuth,
+  ordersRouter,
 );
