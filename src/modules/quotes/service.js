@@ -1,5 +1,11 @@
 import { Prisma } from "../../../generated/prisma/client.js";
 import { AppError } from "../../utils/AppError.js";
+import { logger } from "../../utils/logger.js";
+import {
+  sendNewQuoteAlert,
+  sendQuotePricingReadyAlert,
+  sendOrderConfirmedAlert,
+} from "../../services/email.service.js";
 
 // =====================================================================
 // Quotes service — procurement workflow & RFQs (Phase 4)
@@ -29,11 +35,11 @@ export async function createQuote(db, hospitalId, input, actor) {
   const [hospital, vendor] = await Promise.all([
     db.organization.findUnique({
       where: { id: hospitalId },
-      select: { id: true, type: true },
+      select: { id: true, type: true, name: true, email: true },
     }),
     db.organization.findUnique({
       where: { id: vendorId },
-      select: { id: true, type: true },
+      select: { id: true, type: true, name: true, email: true },
     }),
   ]);
 
@@ -150,10 +156,32 @@ export async function createQuote(db, hospitalId, input, actor) {
     return quote;
   };
 
+  let createdQuote;
   if (typeof db.$transaction === "function") {
-    return await db.$transaction(executeTransaction);
+    createdQuote = await db.$transaction(executeTransaction);
+  } else {
+    createdQuote = await executeTransaction(db);
   }
-  return await executeTransaction(db);
+
+  // Asynchronously dispatch transactional email alert to vendor
+  if (vendor?.email) {
+    sendNewQuoteAlert({
+      to: vendor.email,
+      vendorName: vendor.name,
+      hospitalName: hospital.name,
+      quoteId: createdQuote.id,
+      itemsCount: items.length,
+      totalAmount: createdQuote.totalAmount,
+      currency: createdQuote.currency,
+    }).catch((err) => {
+      logger.warn("Failed to dispatch new quote alert email", {
+        quoteId: createdQuote.id,
+        error: err.message,
+      });
+    });
+  }
+
+  return createdQuote;
 }
 
 /**
@@ -364,8 +392,8 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
       data: { status: newStatus },
       include: {
         items: true,
-        vendor: { select: { id: true, name: true } },
-        hospital: { select: { id: true, name: true } },
+        vendor: { select: { id: true, name: true, email: true } },
+        hospital: { select: { id: true, name: true, email: true } },
         order: true,
       },
     });
@@ -390,8 +418,43 @@ export async function updateQuoteStatus(db, id, newStatus, actor) {
     return updatedQuote;
   };
 
+  let result;
   if (typeof db.$transaction === "function") {
-    return await db.$transaction(executeUpdate);
+    result = await db.$transaction(executeUpdate);
+  } else {
+    result = await executeUpdate(db);
   }
-  return await executeUpdate(db);
+
+  // Asynchronously dispatch transactional alerts
+  if (newStatus === "SENT" && result?.hospital?.email) {
+    sendQuotePricingReadyAlert({
+      to: result.hospital.email,
+      hospitalName: result.hospital.name,
+      vendorName: result.vendor.name,
+      quoteId: result.id,
+      totalAmount: result.totalAmount,
+      currency: result.currency,
+    }).catch((err) => {
+      logger.warn("Failed to dispatch pricing ready email", {
+        quoteId: result.id,
+        error: err.message,
+      });
+    });
+  } else if (newStatus === "ACCEPTED" && result?.vendor?.email && result?.order) {
+    sendOrderConfirmedAlert({
+      to: result.vendor.email,
+      vendorName: result.vendor.name,
+      hospitalName: result.hospital.name,
+      orderId: result.order.id,
+      totalAmount: result.order.totalAmount,
+      currency: result.order.currency,
+    }).catch((err) => {
+      logger.warn("Failed to dispatch order confirmed email", {
+        orderId: result.order.id,
+        error: err.message,
+      });
+    });
+  }
+
+  return result;
 }

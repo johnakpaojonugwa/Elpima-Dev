@@ -11,6 +11,10 @@ import {
   getOrderById,
   updateOrderStatus,
 } from "./service.js";
+import {
+  formatOrderConfirmedWhatsAppMessage,
+  createWhatsAppChatLink,
+} from "../../services/whatsapp.service.js";
 
 // =====================================================================
 // Orders router — /api/v1/orders (Phase 4)
@@ -166,6 +170,62 @@ ordersRouter.patch("/:id", async (req, res, next) => {
       success: true,
       data: { order },
       order, // backward-compatible alias
+      meta: {
+        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/orders/{id}/whatsapp-link:
+ *   get:
+ *     summary: Generate standard WhatsApp purchase order notification link
+ *     description: Generates an official wa.me universal Click-to-Chat deep link with prefilled purchase order confirmation text for standard/personal WhatsApp.
+ *     tags:
+ *       - Orders
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: WhatsApp Click-to-Chat URL and prefilled text generated
+ *       404:
+ *         description: Order not found
+ */
+ordersRouter.get("/:id/whatsapp-link", async (req, res, next) => {
+  try {
+    const { id } = OrderIdParamSchema.parse(req.params);
+    const order = await getOrderById(prisma, id, req.user);
+
+    const isCallerHospital = req.user.organizationId === order.hospitalId;
+    const recipientOrg = isCallerHospital ? order.quote.vendor : order.hospital;
+
+    const message = formatOrderConfirmedWhatsAppMessage({
+      orderId: order.id,
+      quoteId: order.quoteId,
+      hospitalName: order.hospital.name,
+      vendorName: order.quote.vendor.name,
+      totalAmount: order.totalAmount,
+      currency: order.currency,
+    });
+
+    const whatsappUrl = createWhatsAppChatLink(recipientOrg.phone, message);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        whatsappUrl,
+        message,
+        recipientPhone: recipientOrg.phone,
+      },
       meta: {
         ...(req.correlationId ? { correlationId: req.correlationId } : {}),
       },

@@ -1,5 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client.js";
 import { AppError } from "../../utils/AppError.js";
+import { logger } from "../../utils/logger.js";
+import { sendWelcomeEmail } from "../../services/email.service.js";
 
 // =====================================================================
 // Organizations service — business logic for the organizations module
@@ -145,11 +147,29 @@ export async function createOrganization(db, input, actor) {
     return { organization, user };
   };
 
+  let result;
   // Run atomically in a transaction when the client supports it
   if (typeof db.$transaction === "function") {
-    return await db.$transaction(executeWrites);
+    result = await db.$transaction(executeWrites);
+  } else {
+    result = await executeWrites(db);
   }
-  return await executeWrites(db);
+
+  // Asynchronously dispatch welcome email (fire-and-forget, never breaks onboarding flow)
+  if (result?.organization?.email) {
+    sendWelcomeEmail({
+      to: result.organization.email,
+      organizationName: result.organization.name,
+      contactName: result.organization.name,
+    }).catch((err) => {
+      logger.warn("Failed to dispatch welcome email", {
+        orgId: result.organization.id,
+        error: err.message,
+      });
+    });
+  }
+
+  return result;
 }
 
 /**

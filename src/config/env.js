@@ -57,6 +57,15 @@ const envSchema = z.object({
   // When configured, GET /metrics requires Authorization: Bearer <METRICS_TOKEN>.
   METRICS_TOKEN: z.string().min(1).optional(),
 
+  // Optional Resend API key for transactional emails.
+  // When unset (test/dev), email dispatch falls back to structured logging.
+  RESEND_API_KEY: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().default("Elpima Surgicals <onboarding@resend.dev>"),
+
+  // Supabase Storage buckets
+  SUPABASE_STORAGE_BUCKET_LICENSES: z.string().default("licenses"),
+  SUPABASE_STORAGE_BUCKET_PRODUCTS: z.string().default("products"),
+
   // Accepts a single origin, "*" (any origin, dev default), or a
   // comma-separated list. The browser's CORS check fails silently on
   // a single malformed origin, so parsing the list at the env boundary

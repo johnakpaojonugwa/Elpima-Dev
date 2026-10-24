@@ -504,4 +504,35 @@ describe.skipIf(skipReason)("Quotes & Procurement RFQ API (/api/v1/quotes)", () 
       expect(auditLog.metadata.createdOrderId).toBe(order.id);
     });
   });
+
+  describe("GET /api/v1/quotes/:id/whatsapp-link (Standard Personal WhatsApp)", () => {
+    it("generates a wa.me Click-to-Chat deep link with prefilled RFQ breakdown", { timeout: TEST_TIMEOUT }, async () => {
+      const quoteId = createdQuoteIds[0];
+      const res = await request(app)
+        .get(`/api/v1/quotes/${quoteId}/whatsapp-link`)
+        .set("Authorization", `Bearer ${hospitalAToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.whatsappUrl).toMatch(/^https:\/\/wa\.me\//);
+      expect(res.body.data.whatsappUrl).toContain("wa.me");
+      expect(res.body.data.message).toContain("Elpima Medical B2B — New RFQ Alert");
+      expect(res.body.data.status).toBe("SENT");
+
+      // Verify DB record was updated with whatsappStatus SENT
+      const dbQuote = await prisma.quote.findUnique({ where: { id: quoteId } });
+      expect(dbQuote.whatsappStatus).toBe("SENT");
+      expect(dbQuote.whatsappSentAt).not.toBeNull();
+    });
+
+    it("rejects unauthorized cross-tenant callers with 404", { timeout: TEST_TIMEOUT }, async () => {
+      const quoteId = createdQuoteIds[0];
+      const res = await request(app)
+        .get(`/api/v1/quotes/${quoteId}/whatsapp-link`)
+        .set("Authorization", `Bearer ${hospitalBToken}`);
+
+      expect(res.status).toBe(404);
+    });
+  });
 });
+

@@ -20,6 +20,10 @@ Runtime parsing and validation are enforced at boot time by `src/config/env.js` 
 | `SUPABASE_JWT_AUDIENCE` | String | Optional | *Unset* | Expected `aud` claim on incoming JWTs. If set, tokens with mismatched audience are rejected with 401. |
 | `SUPABASE_JWKS_URL` | String (HTTP/HTTPS URL) | Optional | *Unset* | Asymmetric JSON Web Key Set (JWKS) endpoint URL. When set, verifies tokens with RS256 rather than HS256. |
 | `METRICS_TOKEN` | String | Optional | *Unset* | Secret bearer token required to scrape `/metrics`. If set, requests must supply `Authorization: Bearer <METRICS_TOKEN>`. |
+| `RESEND_API_KEY` | String | Optional | *Unset* | Resend API key for transactional emails. When unset in dev/test, dispatches are simulated via structured logs. |
+| `EMAIL_FROM` | String | Optional | `Elpima Surgicals <onboarding@resend.dev>` | From address and display name for outbound emails. |
+| `SUPABASE_STORAGE_BUCKET_LICENSES` | String | Optional | `licenses` | Private Supabase storage bucket for medical verification documents. |
+| `SUPABASE_STORAGE_BUCKET_PRODUCTS` | String | Optional | `products` | Supabase storage bucket for vendor product catalog images. |
 | `CORS_ORIGIN` | String (CSV or `*`) | Optional | `*` | Allowed CORS origins. Accepts comma-separated URLs or wildcard `*`. |
 | `INTEGRATION_TESTS` | String | Optional | *Unset* | Set to `skip` in CI/test environments where live Supabase connection is intentionally disabled. |
 

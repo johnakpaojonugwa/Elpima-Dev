@@ -8,6 +8,7 @@ import { productsRouter } from "../modules/products/route.js";
 import { licensesRouter } from "../modules/licenses/route.js";
 import { quotesRouter } from "../modules/quotes/route.js";
 import { ordersRouter } from "../modules/orders/route.js";
+import { storageRouter } from "../modules/storage/route.js";
 
 export const router = Router();
 
@@ -73,4 +74,12 @@ router.use(
   "/api/v1/orders",
   requireAuth,
   ordersRouter,
+);
+
+// Storage: Private compliance licenses & product catalog asset uploads.
+// All routes require authentication; role-gated per asset category.
+router.use(
+  "/api/v1/storage",
+  requireAuth,
+  storageRouter,
 );

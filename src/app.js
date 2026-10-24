@@ -12,6 +12,7 @@ import { morganStream } from './utils/logger.js';
 import { correlationId } from './middlewares/correlationId.js';
 import { setupSwagger } from './config/swagger.js';
 import { metricsMiddleware } from './utils/metrics.js';
+import { idempotency } from './middlewares/idempotency.js';
 
 // Custom morgan format: returns a JSON-encoded line so the stream
 // (morganStream.write in utils/logger.js) can pull structured fields
@@ -74,6 +75,9 @@ export function createApp() {
 
   // Mount OpenAPI / Swagger UI documentation at /api/v1/docs
   setupSwagger(app);
+
+  // Idempotency middleware for mutating requests with Idempotency-Key
+  app.use(idempotency);
 
   app.use(router);
 

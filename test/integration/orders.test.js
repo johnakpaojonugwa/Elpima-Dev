@@ -363,4 +363,28 @@ describe.skipIf(skipReason)("Orders & Fulfillment API (/api/v1/orders)", () => {
       expect(res.body.error.message).toMatch(/confirmed or fulfilled orders cannot be cancelled/i);
     });
   });
+
+  describe("GET /api/v1/orders/:id/whatsapp-link (Standard Personal WhatsApp)", () => {
+    it("generates a wa.me Click-to-Chat deep link for confirmed order fulfillment", { timeout: TEST_TIMEOUT }, async () => {
+      const res = await request(app)
+        .get(`/api/v1/orders/${activeOrder.id}/whatsapp-link`)
+        .set("Authorization", `Bearer ${hospitalAToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.whatsappUrl).toMatch(/^https:\/\/wa\.me\//);
+      expect(res.body.data.whatsappUrl).toContain("wa.me");
+      expect(res.body.data.message).toContain("Elpima Medical B2B — Purchase Order Confirmed!");
+      expect(res.body.data.recipientPhone).toBeDefined();
+    });
+
+    it("rejects unauthorized cross-tenant callers with 404", { timeout: TEST_TIMEOUT }, async () => {
+      const res = await request(app)
+        .get(`/api/v1/orders/${activeOrder.id}/whatsapp-link`)
+        .set("Authorization", `Bearer ${hospitalBToken}`);
+
+      expect(res.status).toBe(404);
+    });
+  });
 });
+

@@ -14,6 +14,11 @@ import {
   updateQuoteStatus,
 } from "./service.js";
 import { requireOrgType } from "../../middlewares/auth.js";
+import { AppError } from "../../utils/AppError.js";
+import {
+  formatRfqWhatsAppMessage,
+  createWhatsAppChatLink,
+} from "../../services/whatsapp.service.js";
 
 // =====================================================================
 // Quotes router — /api/v1/quotes (Phase 4)
@@ -240,6 +245,97 @@ quotesRouter.patch("/:id", async (req, res, next) => {
       success: true,
       data: { quote },
       quote, // backward-compatible alias
+      meta: {
+        ...(req.correlationId ? { correlationId: req.correlationId } : {}),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
+ * /api/v1/quotes/{id}/whatsapp-link:
+ *   get:
+ *     summary: Generate standard WhatsApp Click-to-Chat alert link
+ *     description: Generates a standard universal wa.me deep-link formatted with quote details to notify the vendor or hospital on regular WhatsApp. Updates quote whatsappStatus to SENT.
+ *     tags:
+ *       - Quotes
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: WhatsApp deep-link and formatted message generated
+ *       404:
+ *         description: Quote not found
+ */
+quotesRouter.get("/:id/whatsapp-link", async (req, res, next) => {
+  try {
+    const { id } = QuoteIdParamSchema.parse(req.params);
+
+    const quote = await prisma.quote.findUnique({
+      where: { id },
+      include: {
+        hospital: { select: { id: true, name: true, phone: true } },
+        vendor: { select: { id: true, name: true, phone: true } },
+        items: { include: { product: { select: { name: true } } } },
+      },
+    });
+
+    if (!quote) {
+      throw new AppError(404, "Quote not found");
+    }
+
+    const isPlatformAdmin = req.user.role === "PLATFORM_ADMIN";
+    const isParticipant =
+      req.user.organizationId === quote.hospitalId ||
+      req.user.organizationId === quote.vendorId;
+
+    if (!isPlatformAdmin && !isParticipant) {
+      throw new AppError(404, "Quote not found");
+    }
+
+    const isCallerHospital = req.user.organizationId === quote.hospitalId;
+    const recipientOrg = isCallerHospital ? quote.vendor : quote.hospital;
+
+    const message = formatRfqWhatsAppMessage({
+      quoteId: quote.id,
+      hospitalName: quote.hospital.name,
+      vendorName: quote.vendor.name,
+      itemsCount: quote.items.length,
+      totalAmount: quote.totalAmount,
+      currency: quote.currency,
+      notes: quote.notes,
+      items: quote.items.map((i) => ({
+        name: i.product?.name || "Medical Item",
+        quantity: i.quantity,
+      })),
+    });
+
+    const whatsappUrl = createWhatsAppChatLink(recipientOrg.phone, message);
+
+    await prisma.quote.update({
+      where: { id: quote.id },
+      data: {
+        whatsappStatus: "SENT",
+        whatsappSentAt: new Date(),
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        whatsappUrl,
+        message,
+        recipientPhone: recipientOrg.phone,
+        status: "SENT",
+      },
       meta: {
         ...(req.correlationId ? { correlationId: req.correlationId } : {}),
       },

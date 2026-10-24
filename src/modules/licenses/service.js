@@ -1,5 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client.js";
 import { AppError } from "../../utils/AppError.js";
+import { logger } from "../../utils/logger.js";
+import { sendLicenseReviewAlert } from "../../services/email.service.js";
 
 // =====================================================================
 // Licenses service — hospital verification compliance (Phase 3)
@@ -204,7 +206,12 @@ export async function getLicenseById(db, id, actor) {
 export async function reviewLicense(db, id, input, actor) {
   const license = await db.license.findUnique({
     where: { id },
-    select: { id: true, organizationId: true, status: true },
+    select: {
+      id: true,
+      organizationId: true,
+      status: true,
+      organization: { select: { id: true, name: true, email: true } },
+    },
   });
 
   if (!license) {
@@ -257,6 +264,21 @@ export async function reviewLicense(db, id, input, actor) {
     },
     select: { id: true },
   });
+
+  // Asynchronously dispatch license review email alert to hospital
+  if (license.organization?.email) {
+    sendLicenseReviewAlert({
+      to: license.organization.email,
+      hospitalName: license.organization.name,
+      status: input.status,
+      rejectionReason: input.rejectionReason,
+    }).catch((err) => {
+      logger.warn("Failed to dispatch license review email", {
+        licenseId: id,
+        error: err.message,
+      });
+    });
+  }
 
   return updated;
 }
